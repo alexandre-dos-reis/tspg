@@ -253,6 +253,16 @@ export function buildQuery(subset: LoadSubsetOptions | undefined | null, options
   return q.toString();
 }
 
+/**
+ * The collection key of a row: its primary-key value, or, for a composite key, the values
+ * joined with `_` in the order of the key columns (`12_3`). Values containing `_` can make two
+ * different keys collide (`a_b` + `c` and `a` + `b_c`): use another key if yours can.
+ */
+export function compositeKey(pk: readonly string[], row: Record<string, unknown>): string | number {
+  if (pk.length === 1) return row[pk[0]!] as string | number;
+  return pk.map((k) => String(row[k])).join("_");
+}
+
 /** `col=eq.value` for each primary-key column of a row (composite keys supported). */
 export function keyFilter(pk: readonly string[], row: Record<string, unknown>): URLSearchParams {
   const q = new URLSearchParams();

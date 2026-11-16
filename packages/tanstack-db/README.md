@@ -19,7 +19,7 @@ export const todos = createCollection(
     url: "/api", // where createRest's handle() is mounted
     table: "todos",
     queryClient,
-    primaryKey: "id", // or ["a", "b"]
+    primaryKey: "id", // or ["order_id", "line"]: the key is then "12_3"
     headers: async () => ({ Authorization: `Bearer ${await token()}` }),
   }),
 );

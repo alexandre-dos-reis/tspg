@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { IR } from "@tanstack/db";
 import type { LoadSubsetOptions } from "@tanstack/db";
-import { buildQuery } from "../src/postgrest.ts";
+import { buildQuery, compositeKey } from "../src/postgrest.ts";
 
 const ref = (...p: string[]) => new IR.PropRef(p);
 const val = (v: unknown) => new IR.Value(v);
@@ -93,4 +93,10 @@ test("limit/offset only with a pushable order and an exact where", () => {
       limit: 2,
     }),
   ).toBe("select=*&a=eq.1");
+});
+
+test("compositeKey", () => {
+  expect(compositeKey(["id"], { id: 7 })).toBe(7);
+  expect(compositeKey(["order_id", "line"], { order_id: 12, line: 3 })).toBe("12_3");
+  expect(compositeKey(["b", "a"], { a: "x", b: "y" })).toBe("y_x"); // the order of the key, not of the row
 });

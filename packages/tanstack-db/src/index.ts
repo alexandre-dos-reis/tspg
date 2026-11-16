@@ -4,7 +4,9 @@ import type { QueryClient } from "@tanstack/query-core";
 import { buildQuery, keyFilter, TspgRestError } from "./postgrest.ts";
 import type { BuildQueryOptions } from "./postgrest.ts";
 
-export { buildQuery, keyFilter, TspgRestError } from "./postgrest.ts";
+import { compositeKey } from "./postgrest.ts";
+
+export { buildQuery, compositeKey, keyFilter, TspgRestError } from "./postgrest.ts";
 
 /** Row type of a relation, read from a `@tspg/query` generated `Database` type. */
 export type TspgRow<
@@ -20,7 +22,10 @@ export interface TspgCollectionConfig extends BuildQueryOptions {
   /** Table or view name. */
   table: string;
   queryClient: QueryClient;
-  /** Primary key column(s). Default `"id"`. */
+  /**
+   * Primary key column(s). Default `"id"`. A composite key is the values joined with `_`,
+   * in the order given: `["order_id", "line"]` makes `"12_3"`.
+   */
   primaryKey?: string | readonly string[];
   /** Schema, sent as `Accept-Profile` / `Content-Profile` (when not the API's default). */
   schema?: string;
@@ -119,10 +124,7 @@ export function tspgCollectionOptions<Row extends object>(config: TspgCollection
       const subset = ctx.meta?.loadSubsetOptions as Parameters<typeof buildQuery>[0];
       return (await request("GET", buildQuery(subset, config), { signal: ctx.signal })) as Row[];
     },
-    getKey: (row) => {
-      const r = row as Record<string, unknown>;
-      return (pk.length === 1 ? r[pk[0]!] : JSON.stringify(pk.map((k) => r[k]))) as string | number;
-    },
+    getKey: (row) => compositeKey(pk, row as Record<string, unknown>),
     ...(writable && {
       onInsert: async ({ transaction, collection }) => {
         const omit = new Set(config.omitOnInsert);

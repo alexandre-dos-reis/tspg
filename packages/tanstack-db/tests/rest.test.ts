@@ -42,6 +42,14 @@ beforeAll(async () => {
       active boolean NOT NULL DEFAULT true
     );
     GRANT ALL ON api.items TO anon;
+    CREATE TABLE api.lines (
+      order_id int NOT NULL,
+      line int NOT NULL,
+      qty int NOT NULL,
+      PRIMARY KEY (order_id, line)
+    );
+    GRANT ALL ON api.lines TO anon;
+    INSERT INTO api.lines VALUES (1, 1, 10), (1, 2, 20), (2, 1, 30);
     INSERT INTO api.items (name, qty, active) VALUES
       ('apple', 5, true), ('Banana', 0, true), ('cherry', NULL, false), ('50%_off', 7, true), ('date', 12, false);
   `);
@@ -147,4 +155,35 @@ test("eager mode against createRest: the whole table, filtered in memory", async
   const live = createLiveQueryCollection((q) => q.from({ i: c }).where(({ i }) => gt(i.qty, 6)));
   await live.preload();
   expect(live.toArray.map((r) => r.name).sort()).toEqual(["50%_off", "date"]);
+});
+
+test("composite primary key: values joined with _, writes filter on every column", async () => {
+  type Line = { order_id: number; line: number; qty: number };
+  const c = createCollection(
+    tspgCollectionOptions<Line>({
+      url: "http://test",
+      table: "lines",
+      primaryKey: ["order_id", "line"],
+      queryClient: new QueryClient(),
+      syncMode: "eager",
+      fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,
+    }),
+  );
+  await c.preload();
+  expect([...c.keys()].sort()).toEqual(["1_1", "1_2", "2_1"]);
+
+  await c
+    .update("1_2", (d) => {
+      d.qty = 99;
+    })
+    .when("settled");
+  expect(
+    (await db.query<{ qty: number }>("SELECT qty FROM api.lines WHERE order_id = 1 AND line = 2")).rows[0]!.qty,
+  ).toBe(99);
+  expect(
+    (await db.query<{ qty: number }>("SELECT qty FROM api.lines WHERE order_id = 1 AND line = 1")).rows[0]!.qty,
+  ).toBe(10);
+
+  await c.delete("2_1").when("settled");
+  expect((await db.query("SELECT 1 FROM api.lines")).rows).toHaveLength(2);
 });
