@@ -25,6 +25,33 @@ export const todos = createCollection(
 );
 ```
 
+## Types from the database
+
+`@tspg/query` generates a `Database` type from the catalog ([`generateTypes`](../../docs/types.md)). The module has
+no imports, so a browser bundle takes it with `import type` and none of the server's code. `tspgClient` reads it:
+
+```ts
+import { createCollection } from "@tanstack/db";
+import { tspgClient } from "@tspg/tanstack-db";
+import type { Database } from "./db.generated"; // erased at build time
+
+const tspg = tspgClient<Database>({ url: "/api", queryClient });
+
+const orders = createCollection(tspg.collectionOptions("orders")); // rows are typed, "id" is the key
+const lines = createCollection(tspg.collectionOptions("order_items", { primaryKey: ["order_id", "product_id"] }));
+const things = createCollection(tspg.schema("v2").collectionOptions("things")); // Accept-Profile: v2
+```
+
+The compiler checks what the types know:
+
+- the table is one that exists, in the schema chosen (`schema("v2")` for the others), and the row is its `row`;
+- the primary key is `"id"` unless the table's key says otherwise, and then it has to be named and to be that key;
+- a relation that cannot take every write (a view) needs `readOnly: true`, and a view, which has no key, names the
+  columns that identify a row;
+- `omitOnInsert` and `filters` take column names.
+
+Without generated types, `tspgCollectionOptions<Row>({ url, table, queryClient })` takes the row type by hand.
+
 ## Sync modes
 
 The package is built on TanStack DB's Query collection (`@tanstack/query-db-collection`), so it offers the modes
