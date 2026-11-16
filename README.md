@@ -6,6 +6,7 @@ Sharp TypeScript tools for Postgres
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | **[`@tspg/rest`](packages/rest/README.md)**   | **PostgREST as a library.** `handle(Request) => Promise<Response>`, using web-standard `Request` and `Response`. | [npm](https://www.npmjs.com/package/@tspg/rest)  |
 | **[`@tspg/query`](packages/query/README.md)** | **Postgres type-safe query client.** `select()`, `insert()`, `update()`…                                         | [npm](https://www.npmjs.com/package/@tspg/query) |
+| **[`@tspg/tanstack-db`](packages/tanstack-db/README.md)** | **TanStack DB collections over PostgREST.** Live-query predicates become filters; writes become `POST`/`PATCH`/`DELETE`. | [npm](https://www.npmjs.com/package/@tspg/tanstack-db) |
 
 ## Documentation
 

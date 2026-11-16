@@ -44,7 +44,7 @@ const workspaces = new Set<string>();
  * reasonable, which is why it is checked here and not only by `changeset status` in CI.
  */
 const ignored = new Set<string>();
-for (const dir of ["core", "adapters", "query", "rest"]) {
+for (const dir of ["core", "adapters", "query", "rest", "tanstack-db"]) {
   const pkg = Bun.file(`packages/${dir}/package.json`);
   if (!(await pkg.exists())) continue;
   const { name, private: isPrivate } = await pkg.json();

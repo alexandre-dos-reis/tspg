@@ -23,6 +23,7 @@ jobs:
       core: ${{ steps.filter.outputs.core }}
       query: ${{ steps.filter.outputs.query }}
       rest: ${{ steps.filter.outputs.rest }}
+      tanstackDb: ${{ steps.filter.outputs.tanstackDb }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +50,13 @@ jobs:
               - *shared
               - *core
               - 'packages/rest/**'
+            # the integration is tested against `@tspg/rest` (and the adapters under it), so it
+            # follows them
+            tanstackDb:
+              - *shared
+              - *core
+              - 'packages/rest/**'
+              - 'packages/tanstack-db/**'
 
   # A change to a package's `src` or manifest has to say what it means for the next release. The
   # gate is `changeset status`, with `changedFilePatterns` in .changeset/config.json keeping it off
@@ -117,6 +125,15 @@ jobs:
       tests: ./packages/rest/tests/
       # the differential cases against the real PostgREST live in packages/rest/tests/compare
       postgrest: true
+
+  tanstack-db:
+    needs: changes
+    if: needs.changes.outputs.tanstackDb == 'true'
+    uses: ./.github/workflows/package-tests.yml
+    with:
+      name: "@tspg/tanstack-db"
+      package: "@tspg/tanstack-db"
+      tests: ./packages/tanstack-db/tests/
 
   # The suites that are no package's -- the compiled docs and the adapters -- plus the built library
   # on Node. Checked across the whole repo, because what reaches it is shared.

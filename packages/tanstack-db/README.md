@@ -1,0 +1,54 @@
+# @tspg/tanstack-db
+
+TanStack DB collections over a PostgREST-compatible API (`@tspg/rest`, PostgREST, Supabase).
+
+```sh
+npm i @tspg/tanstack-db @tanstack/db @tanstack/query-db-collection @tanstack/query-core
+```
+
+```ts
+import { QueryClient } from "@tanstack/query-core";
+import { createCollection } from "@tanstack/db";
+import { tspgCollectionOptions, type TspgRow } from "@tspg/tanstack-db";
+import type { Database } from "./db.generated"; // from @tspg/query generateTypes (optional)
+
+const queryClient = new QueryClient();
+
+export const todos = createCollection(
+  tspgCollectionOptions<TspgRow<Database, "todos">>({
+    url: "/api", // where createRest's handle() is mounted
+    table: "todos",
+    queryClient,
+    primaryKey: "id", // or ["a", "b"]
+    headers: async () => ({ Authorization: `Bearer ${await token()}` }),
+  }),
+);
+```
+
+In the default `on-demand` mode, live-query predicates are pushed to the server. Every TanStack DB operator is
+handled: either translated, or left to TanStack DB, which always re-applies the full `where` locally.
+
+| TanStack DB                                                                                           | PostgREST                                                                  |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `eq gt gte lt lte` (column vs value, either way round)                                                | `col=eq.x`, `col=gt.x`…                                                    |
+| `in`                                                                                                  | `col=in.(1,2)`                                                             |
+| `like`, `ilike`                                                                                       | `col=like.x`, `col=ilike.x`                                                |
+| `isNull`, `isUndefined`, `eq(col, null)`                                                              | `col=is.null`                                                              |
+| boolean column as predicate                                                                           | `col=is.true`                                                              |
+| `and` / `or` / `not`                                                                                  | repeated params / `or=(…)` / negation pushed down, keeping NULL rows       |
+| `eq(lower(col), "x")`, `eq(upper(col), "X")`                                                          | `col=ilike.x` (escaped)                                                    |
+| `coalesce(col, d)` compared to a constant                                                             | `col=op.x`, plus `col=is.null` when `d` satisfies it                       |
+| `orderBy` on columns                                                                                  | `order=col.desc.nullsfirst`                                                |
+| `limit`, `offset`, cursor `whereFrom`                                                                 | `limit`, `offset`, extra filter                                            |
+| `length`, `concat`, `add`, `subtract`, `multiply`, `divide`, `caseWhen`, aggregates, column-to-column | not expressible: the predicate is dropped (superset), filtered client-side |
+
+When any part of `where` is dropped, or `orderBy` is an expression, a custom comparator or an explicit locale,
+`limit`/`offset` are **not** sent either (a page of a wider set is not the page asked for); TanStack DB then
+paginates locally. String order otherwise follows your database collation.
+
+Writes: `insert` → `POST` (array body; `omitOnInsert: ["id"]` for database-generated columns), `update` → `PATCH ?pk=eq.x` (changed columns only),
+`delete` → `DELETE ?pk=eq.x`, then a refetch (`afterWrite: "direct"` writes the returned representation instead).
+Errors surface as `TspgRestError` (`status`, `code`, `message`, `details`, `hint`).
+
+Relations are not mapped: join collections with TanStack DB live queries instead of PostgREST embeds.
+Cursor ties are not re-fetched (only `cursor.whereFrom` is used). PostgREST-only operators (FTS, `cs`, `ov`…) have no TanStack DB counterpart.

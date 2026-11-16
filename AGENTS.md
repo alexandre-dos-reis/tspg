@@ -7,7 +7,7 @@ reference lives in `docs/`.
 
 ## What this is
 
-- **Three packages under `packages/`.** `@tspg/rest` (`createRest` -> `handle(Request) => Response`) and `@tspg/query`
+- **Four packages under `packages/`** (`@tspg/tanstack-db` is described below the layout table). `@tspg/rest` (`createRest` -> `handle(Request) => Response`) and `@tspg/query`
   (`createQuery` -> `select()`/`insert()`/`upsert()`/`update()`/`delete()`/`rpc()`, `transaction()`, `setContextQuery()`, `generateTypes()`) are published. `@tspg/core` is
   **private**: parsing, planning, SQL, the schema cache, errors and the adapters, bundled by tsdown into each published
   package (it is a `devDependency` on purpose -- tsdown only externalises `dependencies`). The import direction is
@@ -55,6 +55,7 @@ reference lives in `docs/`.
 | `packages/query/src/query.ts` | the six operations over one `runQuery(input)`: the object API, in-process, no `Request` (see below) |
 | `packages/query/src/kinds.ts` | `ErrorKind` and `describeFailure`: how an `EngineError` (by `reason`) or a `DbQueryError` (by SQLSTATE) becomes the `kind` of a `QueryError` |
 | `packages/rest/src/errors.ts` | `PgRestError`, `ApiError`, the `reason` → PostgREST status and `PGRSTxxx` code table, the SQLSTATE → status table, the `PT`/`PGRST` `RAISE` conventions, `toApiError` |
+| `packages/tanstack-db/src/*` | `@tspg/tanstack-db`: `tspgCollectionOptions` (a TanStack DB collection over any PostgREST-compatible API) and `buildQuery` (`loadSubsetOptions` -> PostgREST query string, always a *superset* of the rows asked for: what PostgREST cannot say is left to TanStack DB's local filter, and `limit`/`offset` are then not sent). Client side, peer-depends on `@tanstack/*`, imports nothing from the other packages; its integration test boots `createRest` on PGlite |
 | `packages/query/src/typed.ts` | types only: `createQuery<Db>` input and result inference over a generated database type |
 | `packages/query/src/types.ts` | `introspect(options)` and the generators (`generateTypes`, `generateSchema`, `generateModule`), each taking `createQuery`'s own options and reading the catalog itself, published as `@tspg/query/types` |
 | `packages/core/src/core.ts` | `planTable`/`planRpc`/`execute` (returns a `SqlResult`: body, rows, total), the transaction setup: shared by `handle` and the operations. Nothing in it reads or writes HTTP: `Response`, `Accept`, `Range`, cookies, the `request.*` settings and `preRequest` are the packages', handed to `execute` as a `SqlCall` (`settings`, `before`) |
