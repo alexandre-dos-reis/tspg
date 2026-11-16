@@ -131,3 +131,20 @@ test("a PostgREST error becomes a TspgRestError", async () => {
   expect(err).toBeInstanceOf(TspgRestError);
   expect(err).toMatchObject({ status: 404, code: "PGRST205" });
 });
+
+test("eager mode against createRest: the whole table, filtered in memory", async () => {
+  const c = createCollection(
+    tspgCollectionOptions<Item>({
+      url: "http://test",
+      table: "items",
+      queryClient: new QueryClient(),
+      syncMode: "eager",
+      fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,
+    }),
+  );
+  await c.preload();
+  expect(c.size).toBeGreaterThanOrEqual(5);
+  const live = createLiveQueryCollection((q) => q.from({ i: c }).where(({ i }) => gt(i.qty, 6)));
+  await live.preload();
+  expect(live.toArray.map((r) => r.name).sort()).toEqual(["50%_off", "date"]);
+});

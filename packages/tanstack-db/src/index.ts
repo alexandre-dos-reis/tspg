@@ -27,7 +27,10 @@ export interface TspgCollectionConfig extends BuildQueryOptions {
   /** Static or per-request headers: `Authorization`, API keys… */
   headers?: HeadersInit_ | (() => HeadersInit_ | Promise<HeadersInit_>);
   fetch?: typeof fetch;
-  /** `"on-demand"` (default) pushes live-query predicates to the server; `"eager"` loads the whole table. */
+  /**
+   * `"on-demand"` (default) pushes live-query predicates to the server; `"eager"` loads the whole table.
+   * (TanStack DB's own default is `"eager"`. `"progressive"` is not offered by the Query collection.)
+   */
   syncMode?: "eager" | "on-demand";
   /**
    * Columns left out of the `POST` body, for ones the database generates

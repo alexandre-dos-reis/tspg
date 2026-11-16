@@ -100,3 +100,27 @@ test("an operator the server cannot run still gives correct results (local refil
   expect(gets(calls).every((u) => !u.includes("limit="))).toBeTruthy();
   expect(live.toArray.map((r) => r.id)).toEqual([3]); // only "c, d" is longer than 1 char
 });
+
+test("eager mode loads the whole table once and filters locally", async () => {
+  const calls: string[] = [];
+  const fetchMock = (async (url: string) => {
+    calls.push(decodeURIComponent(url));
+    return new Response(JSON.stringify(DB), { status: 200 });
+  }) as unknown as typeof fetch;
+  const todos = createCollection(
+    tspgCollectionOptions<Todo>({
+      url: "http://x/api",
+      table: "todos",
+      queryClient: new QueryClient(),
+      syncMode: "eager",
+      fetch: fetchMock,
+    }),
+  );
+  await todos.preload();
+  const live = createLiveQueryCollection((q) => q.from({ t: todos }).where(({ t }) => eq(t.done, false)));
+  await live.preload();
+  expect(calls).toEqual(["http://x/api/todos?select=*"]); // no predicate was sent
+  expect(live.toArray.map((r) => r.id).sort()).toEqual(
+    [1, 3, 9].filter((id) => DB.some((r) => r.id === id && !r.done)),
+  );
+});
