@@ -4,6 +4,7 @@ export { buildQuery, compositeKey, keyFilter, TspgRestError } from "./postgrest.
 export { tspgClient } from "./typed.ts";
 export type {
   DatabaseShape,
+  GeneratedKeys,
   RelationName,
   RelationShape,
   SchemaName,

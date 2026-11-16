@@ -77,3 +77,60 @@ test("the default schema sends no profile", async () => {
   const call = calls.find((c) => c.url.includes("/orders"))!;
   expect(call.headers["Accept-Profile"]).toBeUndefined();
 });
+
+// What `generateKeys()` of @tspg/query emits for these tables (the generator is tested there, and
+// against `compositeKey` in tests/keys.test.ts at the root).
+const keys = {
+  default: "api",
+  schemas: {
+    api: {
+      orders: { pk: ["id"], key: (row: { id: number }) => row.id },
+      order_items: {
+        pk: ["order_id", "product_id"],
+        key: (row: { order_id: number; product_id: number }) => `${row.order_id}_${row.product_id}`,
+      },
+    },
+    v2: { things: { pk: ["id"], key: (row: { id: number }) => row.id } },
+  },
+} as const;
+
+test("with the generated keys, the key columns and the key construction are not written by hand", async () => {
+  const seen: { method: string; url: string }[] = [];
+  const keyed = tspgClient<Database>({
+    url: "http://x/api",
+    queryClient: new QueryClient(),
+    keys,
+    fetch: (async (url: string, init?: RequestInit) => {
+      seen.push({ method: init?.method ?? "GET", url: decodeURIComponent(url) });
+      return new Response(init?.method === "PATCH" ? "[]" : JSON.stringify([{ order_id: 12, product_id: 3, qty: 1 }]));
+    }) as unknown as typeof fetch,
+  });
+  const lines = createCollection(keyed.collectionOptions("order_items", { syncMode: "eager" })); // no primaryKey
+  await lines.preload();
+  expect([...lines.keys()]).toEqual(["12_3"]);
+
+  await lines
+    .update("12_3", (d) => {
+      d.qty = 5;
+    })
+    .when("settled");
+  expect(seen.find((c) => c.method === "PATCH")!.url).toEndWith("/order_items?order_id=eq.12&product_id=eq.3");
+
+  // the key columns can still be named, and then the generated construction is not used
+  keyed.collectionOptions("order_items", { primaryKey: ["order_id", "product_id"] });
+  // a table without keys in the generated module still has to say its key
+  // @ts-expect-error `things` is in v2, with a key of its own
+  keyed.collectionOptions("things");
+  keyed.schema("v2").collectionOptions("things");
+  // @ts-expect-error a view has no key to generate, and is read-only
+  keyed.collectionOptions("client_totals");
+});
+
+test("keys that do not match the Database are refused", () => {
+  tspgClient<Database>({
+    url: "/api",
+    queryClient: new QueryClient(),
+    // @ts-expect-error order_items' key is (order_id, product_id)
+    keys: { default: "api", schemas: { api: { order_items: { pk: ["order_id"], key: () => 1 } } } },
+  });
+});

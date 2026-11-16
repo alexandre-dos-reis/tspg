@@ -14,7 +14,7 @@ export type TspgRow<
 
 type HeadersInit_ = Record<string, string>;
 
-export interface TspgCollectionConfig extends BuildQueryOptions {
+export interface TspgCollectionConfig<Row extends object = object> extends BuildQueryOptions {
   /** Base URL of the API, as mounted by `createRest` (e.g. `/api` or `https://x.dev/api`). */
   url: string;
   /** Table or view name. */
@@ -42,6 +42,11 @@ export interface TspgCollectionConfig extends BuildQueryOptions {
    * follows the write replaces it with the server's.
    */
   omitOnInsert?: readonly string[];
+  /**
+   * The collection key of a row. Default: `primaryKey`'s value, or a composite key's values joined with
+   * `_`. The `keys` that `generateKeys()` of `@tspg/query` emits supply both, through `tspgClient`.
+   */
+  getKey?: (row: Row) => string | number;
   /** Make the collection read-only. */
   readOnly?: boolean;
   /**
@@ -70,7 +75,7 @@ export interface TspgCollectionConfig extends BuildQueryOptions {
  * );
  * ```
  */
-export function tspgCollectionOptions<Row extends object>(config: TspgCollectionConfig) {
+export function tspgCollectionOptions<Row extends object>(config: TspgCollectionConfig<Row>) {
   const pk = typeof config.primaryKey === "string" ? [config.primaryKey] : (config.primaryKey ?? ["id"]);
   const base = `${config.url.replace(/\/+$/, "")}/${encodeURIComponent(config.table)}`;
   const doFetch = config.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
@@ -122,7 +127,7 @@ export function tspgCollectionOptions<Row extends object>(config: TspgCollection
       const subset = ctx.meta?.loadSubsetOptions as Parameters<typeof buildQuery>[0];
       return (await request("GET", buildQuery(subset, config), { signal: ctx.signal })) as Row[];
     },
-    getKey: (row) => compositeKey(pk, row as Record<string, unknown>),
+    getKey: config.getKey ?? ((row) => compositeKey(pk, row as Record<string, unknown>)),
     ...(writable && {
       onInsert: async ({ transaction, collection }) => {
         const omit = new Set(config.omitOnInsert);

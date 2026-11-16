@@ -25,32 +25,37 @@ export const todos = createCollection(
 );
 ```
 
-## Types from the database
+## Types and keys from the database
 
-`@tspg/query` generates a `Database` type from the catalog ([`generateTypes`](../../docs/types.md)). The module has
-no imports, so a browser bundle takes it with `import type` and none of the server's code. `tspgClient` reads it:
+`@tspg/query` generates two modules from the catalog, and neither carries anything but what the client needs: a
+`Database` type ([`generateTypes`](../../docs/types.md)) and the key construction ([`generateKeys`](../../docs/types.md#keys-for-a-client-that-keeps-rows-by-key)),
+which holds each table's primary key columns and the code that builds a row's key, a composite one's values joined with `_`.
 
 ```ts
 import { createCollection } from "@tanstack/db";
 import { tspgClient } from "@tspg/tanstack-db";
-import type { Database } from "./db.generated"; // erased at build time
+import type { Database } from "./db.generated"; // types only: erased at build time
+import { keys } from "./db.keys"; //                 the generated key construction
 
-const tspg = tspgClient<Database>({ url: "/api", queryClient });
+const tspg = tspgClient<Database>({ url: "/api", queryClient, keys });
 
-const orders = createCollection(tspg.collectionOptions("orders")); // rows are typed, "id" is the key
-const lines = createCollection(tspg.collectionOptions("order_items", { primaryKey: ["order_id", "product_id"] }));
+const orders = createCollection(tspg.collectionOptions("orders")); // rows are typed
+const lines = createCollection(tspg.collectionOptions("order_items")); // keyed "12_3": nothing to pass
 const things = createCollection(tspg.schema("v2").collectionOptions("things")); // Accept-Profile: v2
 ```
 
 The compiler checks what the types know:
 
 - the table is one that exists, in the schema chosen (`schema("v2")` for the others), and the row is its `row`;
-- the primary key is `"id"` unless the table's key says otherwise, and then it has to be named and to be that key;
+- `keys` has to match the `Database`: a table's key columns are the ones its type says;
+- without `keys`, the key is `"id"` unless the table's says otherwise, and then it has to be named (`primaryKey`) and to
+  be that key; the key is built by joining the columns with `_`, as the generated code does;
 - a relation that cannot take every write (a view) needs `readOnly: true`, and a view, which has no key, names the
   columns that identify a row;
 - `omitOnInsert` and `filters` take column names.
 
-Without generated types, `tspgCollectionOptions<Row>({ url, table, queryClient })` takes the row type by hand.
+Without generated modules, `tspgCollectionOptions<Row>({ url, table, queryClient, primaryKey })` takes the row type by
+hand, and `getKey` replaces the key construction.
 
 ## Sync modes
 
