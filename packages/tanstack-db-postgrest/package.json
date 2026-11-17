@@ -1,7 +1,7 @@
 {
   "name": "@tspg/tanstack-db-postgrest",
   "version": "0.0.0",
-  "description": "TanStack DB collections over a PostgREST-compatible API: @tspg/rest, PostgREST, Supabase",
+  "description": "TanStack DB collections over a PostgREST API: PostgREST itself, Supabase, or any compatible server",
   "keywords": [
     "collection",
     "local-first",

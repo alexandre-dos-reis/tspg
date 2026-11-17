@@ -48,8 +48,7 @@ const shape = (rel: Relation, rows: "row" | "insert"): string => {
  * writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schemas: ["api"] }));
  * ```
  *
- * A composite-type column is typed `unknown`: the client takes what the API sends. For more of the
- * database -- functions, composite types -- there is `@tspg/query/types`.
+ * A composite-type column is typed `unknown`: the client takes what the API sends.
  */
 export const generate = async (source: GenerateSource, options: GenerateOptions = {}): Promise<string> => {
   const cache = isCache(source) ? source : await introspect(source);

@@ -1,4 +1,4 @@
-// Types only, apart from `tspgClient`: nothing here imports `@tspg/query`, so a browser bundle
+// Types only, apart from `tspgClient`: nothing here imports the database or any server code, so a browser bundle
 // takes the generated `Database` as a type (`import type`) and none of the server's code.
 import type { QueryClient } from "@tanstack/query-core";
 import { tspgCollectionOptions } from "./collection.ts";
@@ -72,7 +72,7 @@ export interface GeneratedKeys<Db extends DatabaseShape> {
 
 /** What every collection of a client shares. */
 export interface TspgClientConfig {
-  /** Base URL of the API, as mounted by `createRest` (e.g. `/api` or `https://x.dev/api`). */
+  /** Base URL of the PostgREST API (e.g. `/api` or `https://x.dev/api`). */
   url: string;
   queryClient: QueryClient;
   headers?: TspgCollectionConfig["headers"];

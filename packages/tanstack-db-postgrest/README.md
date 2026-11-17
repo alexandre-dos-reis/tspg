@@ -1,6 +1,7 @@
 # @tspg/tanstack-db-postgrest
 
-TanStack DB collections over a PostgREST-compatible API (`@tspg/rest`, PostgREST, Supabase).
+TanStack DB collections over a [PostgREST](https://postgrest.org) API: PostgREST itself, Supabase, or any compatible
+server. The collections talk to the API over HTTP; only the generator reads the database, to know its tables and keys.
 
 ```sh
 npm i @tspg/tanstack-db-postgrest @tanstack/db @tanstack/query-db-collection @tanstack/query-core
@@ -15,7 +16,7 @@ import { type Database, keys } from "./db"; // written by `@tspg/tanstack-db-pos
 const queryClient = new QueryClient();
 
 const tspg = tspgClient<Database>({
-  url: "/api", // where createRest's handle() is mounted
+  url: "https://api.example.com", // where the PostgREST API is served
   queryClient,
   keys,
   headers: async () => ({ Authorization: `Bearer ${await token()}` }),

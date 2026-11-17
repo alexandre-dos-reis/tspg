@@ -54,7 +54,7 @@ export interface TspgKey<Row> {
 }
 
 export interface TspgCollectionConfig<Row extends object = object> extends BuildQueryOptions {
-  /** Base URL of the API, as mounted by `createRest` (e.g. `/api` or `https://x.dev/api`). */
+  /** Base URL of the PostgREST API (e.g. `/api` or `https://x.dev/api`). */
   url: string;
   /** Table or view name. */
   table: string;
