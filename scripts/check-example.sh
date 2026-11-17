@@ -41,6 +41,13 @@ if [ ! -f server.ts ]; then
       check "a typed insert" ok "$(echo "$out" | grep -o '^created ok' | grep -o ok)"
       check "a typed rpc" 2 "$(echo "$out" | grep -c "^rpc open_todos:\|^single:")"
       ;;
+    with-rest-handler)
+      check "the client reads the table" "open: Try pg-rest, Write docs" "$(line open:)"
+      check "an insert is optimistic" "optimistic: Ship it, Try pg-rest, Write docs" "$(line optimistic:)"
+      check "the server's row replaces it" "created 3" "$(line created)"
+      check "an update leaves the live query" "open after the update: Try pg-rest, Write docs" "$(line "open after")"
+      check "SSR: the browser hydrates without a request" "hydrated: Try pg-rest, Write docs, Ship it (0 request made by the browser)" "$(line hydrated:)"
+      ;;
     with-transactions)
       check "a transaction commits" "1 committed ledger #1 -> alice-main 60, bob-main 140" "$(line 1)"
       check "an overdraft rolls the scope back" "2 refused 23514 invalid_data -> alice-main 60, bob-main 140" "$(line 2)"

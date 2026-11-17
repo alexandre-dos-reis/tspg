@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "paths": { "@tspg/core/*": ["../core/src/*"] }
+    "paths": { "@tspg/core/*": ["../core/src/*"], "@tspg/introspect": ["../introspect/src/index.ts"] }
   },
-  "include": ["src", "tests", "../core/src", "../adapters"]
+  "include": ["src", "tests", "../core/src", "../adapters", "../introspect/src"]
 }
