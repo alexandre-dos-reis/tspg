@@ -70,8 +70,7 @@ function items() {
     tspgCollectionOptions<Item>({
       url: "http://test",
       table: "items",
-      key: byId,
-      omitOnInsert: ["id"],
+      key: { ...byId, generated: ["id"] },
       queryClient: new QueryClient(),
       fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,
     }),

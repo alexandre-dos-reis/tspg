@@ -42,8 +42,6 @@ type WriteOption<R extends RelationShape> = [R["insertable"], R["updatable"], R[
 /** Per-collection options of the typed client, checked against the relation's generated type. */
 export type TspgTableOptions<R extends RelationShape> = KeyOption<R> &
   WriteOption<R> & {
-    /** Columns the database generates, left out of the `POST` body. */
-    omitOnInsert?: readonly (keyof R["row"] & string)[];
     select?: string;
     filters?: Partial<Record<keyof R["row"] & string, string>>;
     afterWrite?: "refetch" | "direct";
@@ -65,6 +63,7 @@ export interface GeneratedKeys<Db extends DatabaseShape> {
       // a relation without a primary key (a view) has none to generate
       readonly [T in RelationName<Db, S> as Db["schemas"][S][T]["pk"] extends readonly [] ? never : T]: {
         readonly pk: Readonly<Db["schemas"][S][T]["pk"]>;
+        readonly generated: readonly string[];
         readonly key: (row: Db["schemas"][S][T]["row"]) => string | number;
       };
     };

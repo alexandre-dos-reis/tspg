@@ -16,6 +16,10 @@ beforeAll(async () => {
     CREATE TABLE api.flags (active boolean PRIMARY KEY);
     CREATE TABLE api.order_items (order_id int NOT NULL, product_id uuid NOT NULL, qty int NOT NULL, PRIMARY KEY (order_id, product_id));
     CREATE TABLE api."odd table" ("odd col" int NOT NULL, ok int NOT NULL, PRIMARY KEY ("odd col", ok));
+    CREATE TABLE api.people (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), first text NOT NULL, last text NOT NULL,
+      full_name text GENERATED ALWAYS AS (first || ' ' || last) STORED, seq int GENERATED ALWAYS AS IDENTITY
+    );
     CREATE VIEW api.totals AS SELECT order_id, sum(qty)::int AS total FROM api.order_items GROUP BY order_id;
   `);
   out = await generate({ db: pgliteAdapter(pg), schemas: ["api"] });
@@ -35,6 +39,19 @@ test("the Database type: row, insert and update shapes, key and writability", ()
   expect(out).toContain("insert: { id: number; title: string; done?: boolean | null; note?: string | null };");
   expect(out).toContain('pk: ["order_id", "product_id"];');
   expect(out).toContain("pk: [];\n        insertable: false;"); // a view
+});
+
+test("keys: the key columns the database makes up are kept out of the POST", () => {
+  const rels = keys.schemas.api;
+  expect(rels.todos.generated).toEqual(["id"]); // an identity
+  expect(rels.order_items.generated).toEqual([]); // the client's own values
+  expect(rels.flags.generated).toEqual([]);
+});
+
+test("a column the database refuses a value for is not in the insert shape; a key the client can make is sent", () => {
+  expect(out).toContain("row: { id: string; first: string; last: string; full_name: string | null; seq: number };");
+  expect(out).toContain("insert: { id: string; first: string; last: string };"); // no full_name, no seq
+  expect(keys.schemas.api.people.generated).toEqual([]); // a uuid default: the client's own is sent
 });
 
 test("keys: one column is its value, several are joined with `_`", () => {

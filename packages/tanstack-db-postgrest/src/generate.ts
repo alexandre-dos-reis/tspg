@@ -20,16 +20,18 @@ const read = (c: string): string => `row${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(c) ?
 const isCache = (s: GenerateSource): s is SchemaCache => "relations" in s;
 
 const shape = (rel: Relation, rows: "row" | "insert" | "update"): string => {
-  const fields = rel.columns.map((c) => {
-    const t = `${columnType(c)}${c.nullable ? " | null" : ""}`;
-    // On the way in, a column the database fills (default, identity, generated) or accepts NULL for may be left
-    // out -- except the primary key: a client that keeps rows by key needs one at once (the optimistic row's),
-    // so it always supplies it, and `omitOnInsert` keeps it out of the request when the database makes its own.
-    const optional =
-      rows === "update" ||
-      (rows === "insert" && !rel.pk.includes(c.name) && (c.hasDefault || c.generated || c.nullable));
-    return `${tsKey(c.name)}${optional ? "?" : ""}: ${t}`;
-  });
+  const fields = rel.columns
+    // a column the database refuses a value for (a stored generated one, an `ALWAYS` identity) cannot be inserted,
+    // unless it is the primary key, which the client still holds the optimistic row by
+    .filter((c) => !(rows === "insert" && (c.generated || c.identity === "always") && !rel.pk.includes(c.name)))
+    .map((c) => {
+      const t = `${columnType(c)}${c.nullable ? " | null" : ""}`;
+      // On the way in, a column the database fills (a default) or accepts NULL for may be left out -- except the
+      // primary key: a client that keeps rows by key needs one at once, for the optimistic row.
+      const optional =
+        rows === "update" || (rows === "insert" && !rel.pk.includes(c.name) && (c.hasDefault || c.nullable));
+      return `${tsKey(c.name)}${optional ? "?" : ""}: ${t}`;
+    });
   return `{ ${fields.join("; ")} }`;
 };
 
@@ -84,6 +86,12 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
       const byName = new Map(rel.columns.map((c) => [c.name, c]));
       const typeOf = (c: string) => columnType(byName.get(c) ?? { type: "unknown" });
       const params = rel.pk.map((c) => `${tsKey(c)}: ${typeOf(c)}`).join("; ");
+      // key columns the database makes up (an identity, a sequence): what the client holds the optimistic row by is a
+      // placeholder for them, and is kept out of the POST. A key the client can make itself (a uuid) is sent.
+      const made = rel.pk.filter((c) => {
+        const col = byName.get(c);
+        return col?.identity !== undefined || /^nextval\(/i.test(col?.defaultExpr ?? "");
+      });
       const only = rel.pk.length === 1 ? rel.pk[0]! : undefined;
       // Keep this in step with `compositeKey` of this package: one column is its value (a number or a
       // string stays as it is), several are their `String()` joined with `_`, in the order of the key.
@@ -96,6 +104,7 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
       keys.push(
         `      ${tsKey(rel.name)}: {`,
         `        pk: [${rel.pk.map((c) => JSON.stringify(c)).join(", ")}],`,
+        `        generated: [${made.map((c) => JSON.stringify(c)).join(", ")}],`,
         `        key: (row: { ${params} }) => ${body},`,
         "      },",
       );

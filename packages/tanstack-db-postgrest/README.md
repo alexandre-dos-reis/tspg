@@ -44,11 +44,15 @@ writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schem
 await pool.end();
 ```
 
-`collection.insert()` takes that `insert` shape, and reads are typed by `row`. (An optimistic row holds only what was
-inserted until the refetch brings the database's own columns, so a live query that filters on a defaulted column does
-not see the row until then: give that column in the insert.)
-In `insert`, the primary key is required even when the database makes its own (an identity column): the collection keeps
-rows by key, so the client gives the optimistic row a temporary one, and `omitOnInsert` keeps it out of the request.
+`collection.insert()` takes that `insert` shape, and reads are typed by `row`. In `insert`, a column with a default (or
+that accepts NULL) is optional: give it to choose the value, leave it out and the database fills it, and what is not
+given is not sent. A column the database refuses a value for (a stored generated column, an `ALWAYS` identity) is not
+in it. The primary key is required, even when the database makes its own: the collection keeps rows by key, so the
+optimistic row needs one at once. For a key the database makes up (an identity, a sequence) it is a placeholder,
+and the client keeps it out of the request (`keys` lists those columns as `generated`); a key the client can make
+(a `uuid`) is sent as given. An optimistic row holds only what was inserted until the refetch brings the database's
+own columns, so a live query that filters on a defaulted column does not see the row until then: give that column in
+the insert.
 Regenerate it after a migration. `name`, `keysName` and `header` are options; a composite-type column is typed
 `unknown`. Relationships are not in it: joins are the live queries'.
 
@@ -71,7 +75,7 @@ The compiler checks what the types know:
   to match the `Database` (a table's key columns are the ones its type says);
 - a relation that cannot take every write (a view) needs `readOnly: true`, and a view, which has no primary key to
   generate, names the columns that identify a row (`keyColumns`);
-- `omitOnInsert` and `filters` take column names.
+- `filters` takes column names.
 
 ## SSR
 
@@ -131,7 +135,7 @@ When any part of `where` is dropped, or `orderBy` is an expression, a custom com
 `limit`/`offset` are **not** sent either (a page of a wider set is not the page asked for); TanStack DB then
 paginates locally. String order otherwise follows your database collation.
 
-Writes: `insert` → `POST` (array body; `omitOnInsert: ["id"]` for database-generated columns), `update` → `PATCH ?pk=eq.x` (changed columns only),
+Writes: `insert` → `POST` (array body, what the insert gives and nothing more), `update` → `PATCH ?pk=eq.x` (changed columns only),
 `delete` → `DELETE ?pk=eq.x`, then a refetch (`afterWrite: "direct"` writes the returned representation instead).
 Errors surface as `TspgRestError` (`status`, `code`, `message`, `details`, `hint`).
 

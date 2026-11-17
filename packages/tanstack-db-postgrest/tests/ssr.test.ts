@@ -36,7 +36,10 @@ type Database = {
     };
   };
 };
-const keys = { default: "api", schemas: { api: { todos: { pk: ["id"], key: (row: Todo) => row.id } } } } as const;
+const keys = {
+  default: "api",
+  schemas: { api: { todos: { pk: ["id"], generated: ["id"], key: (row: Todo) => row.id } } },
+} as const;
 
 const todos = (syncMode: "eager" | "on-demand") =>
   collectionOptions(`todos-${syncMode}`, () =>

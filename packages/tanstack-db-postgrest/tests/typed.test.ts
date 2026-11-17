@@ -37,18 +37,20 @@ const keys = {
   default: "api",
   schemas: {
     api: {
-      orders: { pk: ["id"], key: (row: { id: number }) => row.id },
+      orders: { pk: ["id"], generated: ["id"], key: (row: { id: number }) => row.id },
       order_items: {
         pk: ["order_id", "product_id"],
+        generated: [],
         key: (row: { order_id: number; product_id: number }) => `${row.order_id}_${row.product_id}`,
       },
-      profiles: { pk: ["client_id"], key: (row: { client_id: number }) => row.client_id },
+      profiles: { pk: ["client_id"], generated: [], key: (row: { client_id: number }) => row.client_id },
     },
-    v2: { things: { pk: ["id"], key: (row: { id: number }) => row.id } },
+    v2: { things: { pk: ["id"], generated: [], key: (row: { id: number }) => row.id } },
   },
 } as const;
 
 const calls: { method: string; url: string; headers: Record<string, string> }[] = [];
+const posts: unknown[] = [];
 const tspg = tspgClient<Database>({
   url: "http://x/api",
   queryClient: new QueryClient(),
@@ -59,7 +61,8 @@ const tspg = tspgClient<Database>({
       url: decodeURIComponent(url),
       headers: init?.headers as Record<string, string>,
     });
-    if (init?.method === "PATCH") return new Response("[]");
+    if (init?.method === "POST") posts.push(JSON.parse(init.body as string));
+    if (init?.method === "PATCH" || init?.method === "POST") return new Response("[]");
     return new Response(
       url.includes("/order_items") ? JSON.stringify([{ order_id: 12, product_id: 3, qty: 1 }]) : "[]",
     );
@@ -117,7 +120,7 @@ test("a view has no primary key: it names the columns that identify a row, and i
 });
 
 test("insert() takes the generated insert shape: the key is required, the columns the database fills are not", async () => {
-  const orders = createCollection(tspg.collectionOptions("orders", { omitOnInsert: ["id"] }));
+  const orders = createCollection(tspg.collectionOptions("orders"));
   const compiles = () => {
     orders.insert({ id: -1, client_id: 7 }); // `total` may be left out
     // @ts-expect-error the key is required: the optimistic row is held by it
@@ -130,16 +133,17 @@ test("insert() takes the generated insert shape: the key is required, the column
   };
   expect(compiles).toBeTypeOf("function"); // checked by the compiler, never run
 
-  // at run time the temporary key is held by the collection and kept out of the POST body
+  // at run time the placeholder key (orders' id is made up by the database) is kept out of the POST body
   await orders.insert({ id: -1, client_id: 7 }).when("settled");
-  const post = calls.find((c) => c.method === "POST");
-  expect(post?.url).toEndWith("/orders");
+  expect(posts.at(-1)).toEqual([{ client_id: 7 }]);
 });
 
-test("omitOnInsert and filters name real columns", () => {
-  tspg.collectionOptions("orders", { omitOnInsert: ["id"], filters: { id: "gt.0" } });
+test("filters name real columns, and there is no omitOnInsert", () => {
+  tspg.collectionOptions("orders", { filters: { id: "gt.0" } });
   // @ts-expect-error not a column
-  tspg.collectionOptions("orders", { omitOnInsert: ["nope"] });
+  tspg.collectionOptions("orders", { filters: { nope: "gt.0" } });
+  // @ts-expect-error what an insert leaves out is the insert: columns not given are not sent
+  tspg.collectionOptions("orders", { omitOnInsert: ["id"] });
 });
 
 test("another schema is chosen by name, and sent as a profile", async () => {

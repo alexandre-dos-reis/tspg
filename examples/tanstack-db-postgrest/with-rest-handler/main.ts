@@ -35,8 +35,8 @@ const tspg = tspgClient<Database>({
 });
 
 // `eager` (the default) loads the table once. `syncMode: "on-demand"` would load only what a live query asks
-// for, its filters sent to the API. The columns the database fills are left out of the POST.
-const todos = createCollection(tspg.collectionOptions("todos", { omitOnInsert: ["id", "owner", "created"] }));
+// for, its filters sent to the API.
+const todos = createCollection(tspg.collectionOptions("todos"));
 await todos.preload();
 
 // A live query: TanStack DB keeps it up to date as the collection changes.
@@ -50,7 +50,8 @@ await open.preload();
 console.log("open:", open.toArray.map((t) => t.title).join(", "));
 
 // An insert is optimistic: the row is there at once under a temporary id, and replaced by the server's. The key
-// is required (the collection holds rows by it); `omitOnInsert` keeps it out of the request.
+// is required (the collection holds rows by it); `todos.id` is an identity, so the client keeps the placeholder
+// out of the request. `owner` and `created` are left out: the database fills them.
 const tx = todos.insert({ id: -1, title: "Ship it", done: false }); // the generated `insert` shape; `done` is given because the live query reads it
 console.log("optimistic:", open.toArray.map((t) => t.title).join(", "));
 await tx.when("settled");

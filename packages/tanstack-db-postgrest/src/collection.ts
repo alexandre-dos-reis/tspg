@@ -48,6 +48,8 @@ type HeadersInit_ = Record<string, string>;
 /** What identifies a row: its primary key columns, and the collection key made of them. */
 export interface TspgKey<Row> {
   readonly pk: readonly string[];
+  /** Key columns the database makes up (an identity): the client's value is a placeholder, kept out of the POST. */
+  readonly generated?: readonly string[];
   readonly key: (row: Row) => string | number;
 }
 
@@ -73,13 +75,6 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
    * the server and loads only what they ask for.
    */
   syncMode?: "eager" | "on-demand";
-  /**
-   * Columns left out of the `POST` body, for ones the database generates
-   * (`GENERATED ALWAYS AS IDENTITY`, a trigger…). TanStack DB still needs a
-   * key for the optimistic row: give it a temporary one, and the refetch that
-   * follows the write replaces it with the server's.
-   */
-  omitOnInsert?: readonly string[];
   /** Make the collection read-only. */
   readOnly?: boolean;
   /**
@@ -159,7 +154,7 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
     getKey: config.key.key,
     ...(writable && {
       onInsert: async ({ transaction, collection }) => {
-        const omit = new Set(config.omitOnInsert);
+        const omit = new Set(config.key.generated);
         const rows = transaction.mutations.map((m) =>
           Object.fromEntries(Object.entries(m.modified).filter(([k]) => !omit.has(k))),
         );

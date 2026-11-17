@@ -32,10 +32,12 @@ export const keys = {
     api: {
       tags: {
         pk: ["id"],
+        generated: ["id"],
         key: (row: { id: number }) => row.id,
       },
       todos: {
         pk: ["id"],
+        generated: ["id"],
         key: (row: { id: number }) => row.id,
       },
     },
