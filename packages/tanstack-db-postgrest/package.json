@@ -1,6 +1,6 @@
 {
   "name": "@tspg/tanstack-db-postgrest",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "TanStack DB collections over a PostgREST API: PostgREST itself, Supabase, or any compatible server",
   "keywords": [
     "collection",
