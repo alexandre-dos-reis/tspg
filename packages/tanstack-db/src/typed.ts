@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/query-core";
 import { tspgCollectionOptions } from "./collection.ts";
 import type { TspgCollectionConfig } from "./collection.ts";
 
-/** What the generated `Database` holds for one relation (a table, a view…). */
+/** What the generated `Database` holds for one table or view (a table, a view…). */
 export interface RelationShape {
   row: object;
   pk: readonly string[];
@@ -13,22 +13,16 @@ export interface RelationShape {
   deletable: boolean;
 }
 
-/** The generated `Database` type, structurally: any of them fits, whatever its name. */
+/** The generated `Database` type, structurally: schemas, each a map of its tables and views. Relationships are not in it: they are the live queries' joins. */
 export interface DatabaseShape {
   default: string;
-  schemas: Record<string, { relations: Record<string, RelationShape> }>;
+  schemas: Record<string, Record<string, RelationShape>>;
 }
 
 export type SchemaName<Db extends DatabaseShape> = keyof Db["schemas"] & string;
-export type RelationName<
-  Db extends DatabaseShape,
-  S extends SchemaName<Db> = Db["default"],
-> = keyof Db["schemas"][S]["relations"] & string;
-type Rel<
-  Db extends DatabaseShape,
-  S extends SchemaName<Db>,
-  T extends RelationName<Db, S>,
-> = Db["schemas"][S]["relations"][T];
+export type RelationName<Db extends DatabaseShape, S extends SchemaName<Db> = Db["default"]> = keyof Db["schemas"][S] &
+  string;
+type Rel<Db extends DatabaseShape, S extends SchemaName<Db>, T extends RelationName<Db, S>> = Db["schemas"][S][T];
 
 /**
  * The `id` default holds when the primary key is exactly `["id"]`. Any other key has to be named, and
@@ -72,8 +66,8 @@ export interface GeneratedKeys<Db extends DatabaseShape> {
   readonly schemas: {
     readonly [S in SchemaName<Db>]?: {
       readonly [T in RelationName<Db, S>]?: {
-        readonly pk: Readonly<Db["schemas"][S]["relations"][T]["pk"]>;
-        readonly key: (row: Db["schemas"][S]["relations"][T]["row"]) => string | number;
+        readonly pk: Readonly<Db["schemas"][S][T]["pk"]>;
+        readonly key: (row: Db["schemas"][S][T]["row"]) => string | number;
       };
     };
   };

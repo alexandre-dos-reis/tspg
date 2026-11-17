@@ -46,7 +46,7 @@ await pool.end();
 ```
 
 Regenerate it after a migration. `name`, `keysName` and `header` are options; a composite-type column is typed
-`unknown`. The generated `Database` is the same shape as the one `@tspg/query` writes, so either fits.
+`unknown`. Relationships are not in it: joins are the live queries'.
 
 ```ts
 import { createCollection } from "@tanstack/db";

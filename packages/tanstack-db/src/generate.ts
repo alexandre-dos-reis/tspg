@@ -30,7 +30,7 @@ const shape = (rel: Relation, rows: "row" | "insert" | "update"): string => {
 };
 
 /**
- * The module a TanStack DB client needs, as text: a `Database` type of the relations (row, insert and
+ * The module a TanStack DB client needs, as text: a `Database` type of the tables and views (row, insert and
  * update shapes, primary key, whether each can be written) and `keys`, the code that turns a row into
  * its collection key -- the value for one key column, the values joined with `_` for several (`12_3`).
  *
@@ -62,19 +62,19 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   const type: string[] = [`export type ${name} = {`, `  default: ${first};`, "  schemas: {"];
   const keys: string[] = [`export const ${keysName} = {`, `  default: ${first},`, "  schemas: {"];
   for (const schema of schemas) {
-    type.push(`    ${tsKey(schema)}: {`, "      relations: {");
+    type.push(`    ${tsKey(schema)}: {`);
     keys.push(`    ${tsKey(schema)}: {`);
     for (const rel of relationsOf(schema)) {
       type.push(
-        `        ${tsKey(rel.name)}: {`,
-        `          row: ${shape(rel, "row")};`,
-        `          insert: ${shape(rel, "insert")};`,
-        `          update: ${shape(rel, "update")};`,
-        `          pk: [${rel.pk.map((c) => JSON.stringify(c)).join(", ")}];`,
-        `          insertable: ${rel.insertable};`,
-        `          updatable: ${rel.updatable};`,
-        `          deletable: ${rel.deletable};`,
-        "        };",
+        `      ${tsKey(rel.name)}: {`,
+        `        row: ${shape(rel, "row")};`,
+        `        insert: ${shape(rel, "insert")};`,
+        `        update: ${shape(rel, "update")};`,
+        `        pk: [${rel.pk.map((c) => JSON.stringify(c)).join(", ")}];`,
+        `        insertable: ${rel.insertable};`,
+        `        updatable: ${rel.updatable};`,
+        `        deletable: ${rel.deletable};`,
+        "      };",
       );
       if (rel.pk.length === 0) continue; // a view: no key to build, the collection names its columns
       const byName = new Map(rel.columns.map((c) => [c.name, c]));
@@ -96,7 +96,7 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
         "      },",
       );
     }
-    type.push("      };", "    };");
+    type.push("    };");
     keys.push("    },");
   }
   type.push("  };", "};");

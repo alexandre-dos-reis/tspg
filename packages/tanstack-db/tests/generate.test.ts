@@ -33,7 +33,7 @@ test("the Database type: row, insert and update shapes, key and writability", ()
   // the identity column, the defaulted one and the nullable one may be left out of an insert
   expect(out).toContain("insert: { id?: number; title: string; done?: boolean | null; note?: string | null };");
   expect(out).toContain('pk: ["order_id", "product_id"];');
-  expect(out).toContain("pk: [];\n          insertable: false;"); // a view
+  expect(out).toContain("pk: [];\n        insertable: false;"); // a view
 });
 
 test("keys: one column is its value, several are joined with `_`", () => {

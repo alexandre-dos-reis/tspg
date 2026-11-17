@@ -10,7 +10,7 @@ export type TspgRow<
   Db extends DatabaseShape,
   Table extends RelationName<Db, S>,
   S extends SchemaName<Db> = Db["default"],
-> = Db["schemas"][S]["relations"][Table]["row"];
+> = Db["schemas"][S][Table]["row"];
 
 type HeadersInit_ = Record<string, string>;
 

@@ -1,9 +1,30 @@
 import { expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/query-core";
 import { createCollection } from "@tanstack/db";
-// A type-only import, as in a browser bundle: the generated module has no runtime content.
-import type { DatabasePgRest as Database } from "../../../tests/support/fixture.types";
 import { tspgClient, type TspgRow } from "../src/index";
+
+/** What `generate()` writes for these tables: the `Database` type of a browser bundle. */
+type Table<Row extends object, Pk extends readonly string[], W extends boolean = true> = {
+  row: Row;
+  insert: Partial<Row>;
+  update: Partial<Row>;
+  pk: Pk;
+  insertable: W;
+  updatable: W;
+  deletable: W;
+};
+type Database = {
+  default: "api";
+  schemas: {
+    api: {
+      orders: Table<{ id: number; client_id: number; total: number | null }, ["id"]>;
+      order_items: Table<{ order_id: number; product_id: number; qty: number }, ["order_id", "product_id"]>;
+      profiles: Table<{ client_id: number; bio: string | null }, ["client_id"]>;
+      client_totals: Table<{ client_id: number; revenue: number | null }, [], false>;
+    };
+    v2: { things: Table<{ id: number; name: string }, ["id"]> };
+  };
+};
 
 const calls: { url: string; headers: Record<string, string> }[] = [];
 const tspg = tspgClient<Database>({
