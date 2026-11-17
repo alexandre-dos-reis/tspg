@@ -44,7 +44,7 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
   omitOnInsert?: readonly string[];
   /**
    * The collection key of a row. Default: `primaryKey`'s value, or a composite key's values joined with
-   * `_`. The `keys` that `generate()` of `@tspg/tanstack-db/generate` emits supply both, through `tspgClient`.
+   * `_`. The `keys` that `generate()` of `@tspg/tanstack-db-query/generate` emits supply both, through `tspgClient`.
    */
   getKey?: (row: Row) => string | number;
   /** Make the collection read-only. */
