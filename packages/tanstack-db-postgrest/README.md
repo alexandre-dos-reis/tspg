@@ -54,9 +54,12 @@ are the live queries'.
 
 ## 2. Use it
 
-The same code runs on the server and in the browser. `collections(env)` makes the descriptors; `env` is the URL, an
-optional custom `fetch` and optional `headers`. A `DbClient` (TanStack DB's SSR client) materializes them and gives the
-query client.
+The same code runs on the server and in the browser, and `collections(env)` is what makes that possible. Called with
+`env` (the URL, an optional custom `fetch`, optional `headers`: the only things that differ between the two sides), it
+returns one descriptor per table. A descriptor is what TanStack DB's SSR needs: it has a stable id that carries the
+schema (`"api.orders"`), which `dehydrate()` and `hydrate()` use to find the collection again, and it is wired with the
+generated `keys` and the query client of the `DbClient` that materializes it. Without it you would write that
+descriptor by hand for every table.
 
 ```ts ignore
 import { QueryClient } from "@tanstack/query-core";
