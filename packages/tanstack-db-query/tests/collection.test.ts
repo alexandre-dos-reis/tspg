@@ -32,6 +32,7 @@ function setup() {
       table: "todos",
       key: byId,
       queryClient: new QueryClient(),
+      syncMode: "on-demand", // the predicates are pushed to the server: that is what these tests read
       fetch: fetchMock,
     }),
   );

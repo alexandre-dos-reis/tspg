@@ -38,8 +38,8 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
   headers?: HeadersInit_ | (() => HeadersInit_ | Promise<HeadersInit_>);
   fetch?: typeof fetch;
   /**
-   * `"on-demand"` (default) pushes live-query predicates to the server; `"eager"` loads the whole table.
-   * (TanStack DB's own default is `"eager"`. `"progressive"` is not offered by the Query collection.)
+   * `"eager"` (default, as in TanStack DB) loads the whole table; `"on-demand"` pushes live-query predicates to
+   * the server and loads only what they ask for.
    */
   syncMode?: "eager" | "on-demand";
   /**
@@ -75,7 +75,7 @@ export function tspgCollectionOptions<Row extends object>(config: TspgCollection
   const pk = config.key.pk;
   const base = `${config.url.replace(/\/+$/, "")}/${encodeURIComponent(config.table)}`;
   const doFetch = config.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
-  const syncMode = config.syncMode ?? "on-demand";
+  const syncMode = config.syncMode ?? "eager";
 
   async function request(
     method: string,

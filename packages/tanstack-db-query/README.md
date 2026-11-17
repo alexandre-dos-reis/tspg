@@ -98,14 +98,12 @@ export const todos = collectionOptions("todos", () =>
 The package is built on TanStack DB's Query collection (`@tanstack/query-db-collection`), so it offers the modes
 that collection has:
 
-| `syncMode`                   |                                                                                           |
-| ---------------------------- | ----------------------------------------------------------------------------------------- |
-| `"on-demand"` (default here) | loads only what live queries ask for; their predicates are pushed to the server, as below |
-| `"eager"`                    | loads the whole table once and filters in memory: for small, mostly static tables         |
+| `syncMode`          |                                                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| `"eager"` (default) | loads the whole table once and filters in memory: for small, mostly static tables         |
+| `"on-demand"`       | loads only what live queries ask for; their predicates are pushed to the server, as below |
 
-TanStack DB's own default is `eager`; this package defaults to `on-demand`, which is what a PostgREST API is good at.
-`"progressive"` (a subset first, the full table in the background) is not offered by the Query collection, so it is not
-available here.
+The default is TanStack DB's own, `eager`. Choose `on-demand` for large tables, which is what a PostgREST API is good at.
 
 In `on-demand` mode, live-query predicates are pushed to the server. Every TanStack DB operator is
 handled: either translated, or left to TanStack DB, which always re-applies the full `where` locally.
