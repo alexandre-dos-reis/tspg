@@ -46,6 +46,7 @@ if [ ! -f server.ts ]; then
       check "an insert is optimistic" "optimistic: Ship it, Try pg-rest, Write docs" "$(line optimistic:)"
       check "the server's row replaces it" "created 3" "$(line created)"
       check "an update leaves the live query" "open after the update: Try pg-rest, Write docs" "$(line "open after")"
+      check "SSR: the browser hydrates without a request" "hydrated: Try pg-rest, Write docs, Ship it (0 request made by the browser)" "$(line hydrated:)"
       ;;
     with-transactions)
       check "a transaction commits" "1 committed ledger #1 -> alice-main 60, bob-main 140" "$(line 1)"

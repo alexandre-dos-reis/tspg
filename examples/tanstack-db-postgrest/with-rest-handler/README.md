@@ -26,8 +26,10 @@ bun run link:examples tanstack-db-postgrest/with-rest-handler
 - `main.ts` — `collections({ url, fetch })` and a `DbClient` (its query client is its own, as in TanStack DB's SSR
   guide). The `fetch` hands each request to
   `pgRest.handle` in process: no server, no network. `dbClient.collection(api.todos)` gives a typed collection; a live
-  query reads it; an insert shows up at once (optimistic) and is replaced by the server's row; an update sends only what
+  query reads it; an insert shows up at once (optimistic) and is replaced by the row the `POST` returns (no refetch); an update sends only what
   changed (`PATCH /todos?id=eq.N`).
+- The end of `main.ts` is the SSR round trip: a server `DbClient` preloads and `dehydrate()`s, a browser `DbClient`
+  `hydrate()`s and has the rows with no second request. Only `env` (`url`, `fetch`, `headers`) differs between the two.
 - The collection is `eager` (TanStack DB's default): it loads the table once. Pass `syncMode: "on-demand"` to load only
   what live queries ask for, their filters sent to the API.
 

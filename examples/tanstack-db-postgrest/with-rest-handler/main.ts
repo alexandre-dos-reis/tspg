@@ -48,7 +48,7 @@ const open = createLiveQueryCollection((q) =>
 await open.preload();
 console.log("open:", open.toArray.map((t) => t.title).join(", "));
 
-// An insert is optimistic: the row is there at once under a temporary id, and replaced by the server's. The key
+// An insert is optimistic: the row is there at once under a temporary id, and replaced by the row the POST returns (no refetch). The key
 // is required (the collection holds rows by it); `todos.id` is an identity, so the client keeps the placeholder
 // out of the request. `owner` and `created` are left out: the database fills them.
 const tx = todos.insert({ id: -1, title: "Ship it", done: false }); // the generated `insert` shape; `done` is given because the live query reads it
@@ -56,12 +56,26 @@ console.log("optimistic:", open.toArray.map((t) => t.title).join(", "));
 await tx.when("settled");
 console.log("created", todos.toArray.find((t) => t.title === "Ship it")?.id);
 
-// An update sends only what changed: PATCH /todos?id=eq.N
+// An update sends only what changed: PATCH /todos?id=eq.N, and the row it returns is written to the collection.
 const mine = todos.toArray.find((t) => t.title === "Ship it")!;
 await todos.update(mine.id, (draft) => {
   draft.done = true;
 }).when("settled");
 console.log("open after the update:", open.toArray.map((t) => t.title).join(", "));
+
+// SSR, as in TanStack DB's guide: a server preloads its own `DbClient` and `dehydrate()`s it; the browser `hydrate()`s
+// a `DbClient` of its own and has the rows without asking the API again. Only `env` differs between the two sides.
+const calls: string[] = [];
+const counting = ((url: string, init?: RequestInit) => (calls.push(String(url)), inProcess(url, init))) as typeof fetch;
+const server = new DbClient({ queryClient: new QueryClient() });
+await server.collection(collections({ url: "/", fetch: counting, headers: { "X-User": "alice" } }).api.todos).preload();
+const state = JSON.parse(JSON.stringify(server.dehydrate())); // what travels in the page
+
+const preloaded = calls.length; // the server's own request
+const browser = new DbClient({ queryClient: new QueryClient() });
+browser.hydrate(state);
+const hydrated = browser.collection(collections({ url: "/api", fetch: counting }).api.todos);
+console.log("hydrated:", hydrated.toArray.map((t) => t.title).join(", "), `(${calls.length - preloaded} request made by the browser)`);
 
 await pgRest.close();
 await pglite.close();
