@@ -40,8 +40,11 @@ jobs:
               - 'bun.lock'
               - '.github/workflows/*.yml'
               - '.github/actions/**'
+            # the catalog reader both packages (and the generators) are built on: what it reads
+            # changes what they generate, so it counts as core
             core: &core
               - 'packages/core/**'
+              - 'packages/introspect/**'
             query:
               - *shared
               - *core
@@ -105,6 +108,15 @@ jobs:
       name: "@tspg/core"
       package: "@tspg/core"
       tests: ./packages/core/tests/
+
+  introspect:
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.shared == 'true'
+    uses: ./.github/workflows/package-tests.yml
+    with:
+      name: "@tspg/introspect"
+      package: "@tspg/introspect"
+      tests: ./packages/introspect/tests/
 
   query:
     needs: changes

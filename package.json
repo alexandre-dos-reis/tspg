@@ -13,8 +13,8 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "bun --filter '@tspg/rest' --filter '@tspg/query' --filter '@tspg/tanstack-db' build",
-    "dev": "bun --filter '@tspg/rest' --filter '@tspg/query' --filter '@tspg/tanstack-db' dev",
+    "build": "bun --filter '@tspg/rest' --filter '@tspg/query' --filter '@tspg/introspect' --filter '@tspg/tanstack-db' build",
+    "dev": "bun --filter '@tspg/rest' --filter '@tspg/query' --filter '@tspg/introspect' --filter '@tspg/tanstack-db' dev",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "test:compare": "bun test ./packages/rest/tests/compare/",

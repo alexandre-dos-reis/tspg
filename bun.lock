@@ -34,6 +34,23 @@
         "@tspg/adapters": "workspace:*",
       },
     },
+    "packages/introspect": {
+      "name": "@tspg/introspect",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@tspg/adapters": "workspace:*",
+      },
+      "peerDependencies": {
+        "@electric-sql/pglite": ">=0.2.0",
+        "pg": "^8.0.0",
+        "postgres": ">=3.0.0",
+      },
+      "optionalPeers": [
+        "@electric-sql/pglite",
+        "pg",
+        "postgres",
+      ],
+    },
     "packages/query": {
       "name": "@tspg/query",
       "version": "0.3.0",
@@ -77,6 +94,7 @@
         "@tanstack/db": "1.0.0-rc.1.5",
         "@tanstack/query-core": "^5.90.15",
         "@tanstack/query-db-collection": "^1.5.2",
+        "@tspg/introspect": "workspace:*",
       },
       "peerDependencies": {
         "@tanstack/db": ">=1.0.0-rc.0",
@@ -325,6 +343,8 @@
     "@tspg/adapters": ["@tspg/adapters@workspace:packages/adapters"],
 
     "@tspg/core": ["@tspg/core@workspace:packages/core"],
+
+    "@tspg/introspect": ["@tspg/introspect@workspace:packages/introspect"],
 
     "@tspg/query": ["@tspg/query@workspace:packages/query"],
 

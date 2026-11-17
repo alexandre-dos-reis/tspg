@@ -259,7 +259,10 @@ export function buildQuery(subset: LoadSubsetOptions | undefined | null, options
  * different keys collide (`a_b` + `c` and `a` + `b_c`): use another key if yours can.
  */
 export function compositeKey(pk: readonly string[], row: Record<string, unknown>): string | number {
-  if (pk.length === 1) return row[pk[0]!] as string | number;
+  if (pk.length === 1) {
+    const v = row[pk[0]!];
+    return typeof v === "number" || typeof v === "string" ? v : String(v); // a key is a string or a number
+  }
   return pk.map((k) => String(row[k])).join("_");
 }
 

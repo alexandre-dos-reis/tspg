@@ -78,8 +78,8 @@ test("the default schema sends no profile", async () => {
   expect(call.headers["Accept-Profile"]).toBeUndefined();
 });
 
-// What `generateKeys()` of @tspg/query emits for these tables (the generator is tested there, and
-// against `compositeKey` in tests/keys.test.ts at the root).
+// What `generate()` emits for these tables (the generator is tested in generate.test.ts, against
+// `compositeKey`).
 const keys = {
   default: "api",
   schemas: {

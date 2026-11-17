@@ -131,40 +131,6 @@ partial value too. What that means for a query is in [`query.md`](query.md#compo
 
 Only the composite types the module actually mentions are declared, so a `noUnusedLocals` build stays clean.
 
-## Keys, for a client that keeps rows by key
-
-`generateKeys()` writes the other half of what a browser client needs: each relation's primary key columns and the code
-that turns a row into a key — the value itself for one column, the values joined with `_` for several (`12_3`), in the
-order of the key. A [TanStack DB](https://tanstack.com/db) collection, which keeps rows by key, takes it through
-`@tspg/tanstack-db`, so a composite key is never written by hand.
-
-```ts ignore
-import { writeFileSync } from "node:fs";
-import { generateKeys, generateTypes } from "@tspg/query/types";
-
-writeFileSync("src/db.generated.ts", await generateTypes(options)); // types only
-writeFileSync("src/db.keys.ts", await generateKeys(options)); //       the key construction
-```
-
-```ts ignore
-export const keys = {
-  default: "api",
-  schemas: {
-    api: {
-      order_items: {
-        pk: ["order_id", "product_id"],
-        key: (row: { order_id: number; product_id: number }) => `${row.order_id}_${row.product_id}`,
-      },
-      // …
-    },
-  },
-} as const;
-```
-
-Like the types module it has no imports, and it holds no more than the key columns and one function per relation, so it
-goes into a browser bundle where the schema descriptor does not. Relations without a primary key (a view) are left out.
-`name` and `header` are options, as for `generateTypes`. Regenerate it after a migration.
-
 ## A typed instance
 
 ```ts

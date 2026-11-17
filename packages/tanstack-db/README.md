@@ -10,7 +10,7 @@ npm i @tspg/tanstack-db @tanstack/db @tanstack/query-db-collection @tanstack/que
 import { QueryClient } from "@tanstack/query-core";
 import { createCollection } from "@tanstack/db";
 import { tspgCollectionOptions, type TspgRow } from "@tspg/tanstack-db";
-import type { Database } from "./db.generated"; // from @tspg/query generateTypes (optional)
+import type { Database } from "./db"; // from `@tspg/tanstack-db/generate` (optional)
 
 const queryClient = new QueryClient();
 
@@ -27,15 +27,31 @@ export const todos = createCollection(
 
 ## Types and keys from the database
 
-`@tspg/query` generates two modules from the catalog, and neither carries anything but what the client needs: a
-`Database` type ([`generateTypes`](../../docs/types.md)) and the key construction ([`generateKeys`](../../docs/types.md#keys-for-a-client-that-keeps-rows-by-key)),
-which holds each table's primary key columns and the code that builds a row's key, a composite one's values joined with `_`.
+`@tspg/tanstack-db/generate` reads the catalog and writes one module with nothing but what a client needs: a
+`Database` type (each table's `row`, `insert` and `update` shapes, primary key, and whether it can be written) and
+`keys`, which holds each table's primary key columns and the code that builds a row's key — the value for one column,
+a composite key's values joined with `_` (`12_3`). It has no imports of its own: the type is erased from the bundle
+and `keys` is a few functions. The generator runs on Node, at build time, and is the only part that touches the
+database; it is built on [`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package.
+
+```ts ignore
+import { writeFileSync } from "node:fs";
+import { Pool } from "pg";
+import { generate } from "@tspg/tanstack-db/generate";
+import { nodePostgresAdapter } from "@tspg/introspect/adapters/node-postgres"; // or …/pglite, …/postgres-js, …/bun
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schemas: ["api"] }));
+await pool.end();
+```
+
+Regenerate it after a migration. `name`, `keysName` and `header` are options; a composite-type column is typed
+`unknown`. The generated `Database` is the same shape as the one `@tspg/query` writes, so either fits.
 
 ```ts
 import { createCollection } from "@tanstack/db";
 import { tspgClient } from "@tspg/tanstack-db";
-import type { Database } from "./db.generated"; // types only: erased at build time
-import { keys } from "./db.keys"; //                 the generated key construction
+import { type Database, keys } from "./db"; // the type is erased at build time; keys is the key construction
 
 const tspg = tspgClient<Database>({ url: "/api", queryClient, keys });
 

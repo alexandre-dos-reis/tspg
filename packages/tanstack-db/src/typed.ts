@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/query-core";
 import { tspgCollectionOptions } from "./collection.ts";
 import type { TspgCollectionConfig } from "./collection.ts";
 
-/** What `generateTypes()` of `@tspg/query` emits for one relation (a table, a view…). */
+/** What the generated `Database` holds for one relation (a table, a view…). */
 export interface RelationShape {
   row: object;
   pk: readonly string[];
@@ -63,7 +63,7 @@ export type TspgTableOptions<R extends RelationShape, Keyed extends boolean = fa
   };
 
 /**
- * What `generateKeys()` of `@tspg/query` emits, checked against the generated `Database`: each
+ * What `generate()` of `@tspg/tanstack-db/generate` emits, checked against the generated `Database`: each
  * relation's key columns, and the function that builds a row's key (a composite key's values joined
  * with `_`).
  */
@@ -118,7 +118,7 @@ export interface TspgClient<Db extends DatabaseShape, Keyed extends boolean = fa
  * A client typed by the generated `Database`: the tables are the ones that exist, each collection's
  * row is the table's `row`, and the primary key and writability are checked against it.
  *
- * Give it the `keys` that `generateKeys()` of `@tspg/query` emits and the key columns, and the code
+ * Give it the `keys` that `generate()` (`@tspg/tanstack-db/generate`) emits and the key columns, and the code
  * that builds a composite key, come from there instead of being written by hand.
  *
  * ```ts

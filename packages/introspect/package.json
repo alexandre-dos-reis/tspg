@@ -1,0 +1,61 @@
+{
+  "name": "@tspg/introspect",
+  "version": "0.0.0",
+  "description": "Read a Postgres catalog into a structured schema, and map SQL types to TypeScript: the base of code generators",
+  "keywords": [
+    "catalog",
+    "codegen",
+    "introspection",
+    "postgres",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "Alexandre Dos Reis",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexandre-dos-reis/tspg.git",
+    "directory": "packages/introspect"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./adapters": "./dist/adapters/index.js",
+    "./adapters/bun": "./dist/adapters/bun.js",
+    "./adapters/node-postgres": "./dist/adapters/node-postgres.js",
+    "./adapters/pglite": "./dist/adapters/pglite.js",
+    "./adapters/postgres-js": "./dist/adapters/postgres-js.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "bun test",
+    "dev": "tsdown --watch",
+    "prepublishOnly": "bun run build",
+    "lint": "oxlint src tests",
+    "fmt:check": "oxfmt --check src tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tspg/adapters": "workspace:*"
+  },
+  "peerDependencies": {
+    "@electric-sql/pglite": ">=0.2.0",
+    "pg": "^8.0.0",
+    "postgres": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    },
+    "@electric-sql/pglite": {
+      "optional": true
+    }
+  }
+}
