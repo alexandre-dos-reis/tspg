@@ -1,9 +1,10 @@
 // Node-side: the command line of `generate` (`tspg-db`, built as `dist/bin.js`). It reads the catalog of a database
-// -- `--url` with `pg`, or `--sql` into a throwaway PGlite -- and writes the module a client imports, so an
+// -- `--url` with the `pg` it bundles, or `--sql` into a throwaway PGlite -- and writes the module a client imports, so an
 // application never imports the generator or the introspection (`@tspg/introspect` is inlined into the build).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import pg from "pg";
 import type { DbAdapter } from "@tspg/introspect";
 import { nodePostgresAdapter } from "../../adapters/src/node-postgres";
 import { pgliteAdapter } from "../../adapters/src/pglite";
@@ -16,8 +17,7 @@ Usage
   tspg-db generate [options]
 
 Where the catalog is read from (one of the two)
-  --url <url>          a Postgres connection string, read with pg, which the project installs
-                       (default: $DATABASE_URL)
+  --url <url>          a Postgres connection string (default: $DATABASE_URL)
   --sql <file>         a SQL file: its schema is built in a throwaway PGlite database, which is read instead.
                        Needs @electric-sql/pglite; cannot be combined with --url
 
@@ -57,8 +57,9 @@ const nodeIo = (): Io => ({
 
 class UsageError extends Error {}
 
-// `pg` (and PGlite) are the project's own, not this package's: loaded by name at run time, so a project that does not
-// use one is not asked to install it. A module name held in a variable keeps the bundler from resolving it.
+// `pg` is bundled into the build, so the command needs nothing installed. PGlite (WebAssembly, for `--sql`) is the
+// project's own: loaded by name at run time, so a project that does not use `--sql` is not asked to install it.
+// A module name held in a variable keeps the bundler from resolving it.
 const load = async (name: string): Promise<any> => {
   try {
     return await import(name);
@@ -72,12 +73,7 @@ const load = async (name: string): Promise<any> => {
   }
 };
 
-const connect = async (url: string): Promise<DbAdapter> => {
-  const mod = await load("pg");
-  const Pool = mod?.Pool ?? mod?.default?.Pool;
-  if (!Pool) throw new UsageError("pg is not installed here: add it with your package manager (npm i -D pg)");
-  return nodePostgresAdapter(new Pool({ connectionString: url }));
-};
+const connect = (url: string): DbAdapter => nodePostgresAdapter(new pg.Pool({ connectionString: url }));
 
 const fromSql = async (file: string, io: Io): Promise<DbAdapter> => {
   const mod = await load("@electric-sql/pglite");
@@ -121,7 +117,7 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
     else {
       const url = values.url ?? io.env.DATABASE_URL;
       if (!url) throw new UsageError("no database: give --url, set DATABASE_URL, or build one from a file with --sql");
-      db = await connect(url);
+      db = connect(url);
     }
 
     const schemas = (values.schemas ?? "public")

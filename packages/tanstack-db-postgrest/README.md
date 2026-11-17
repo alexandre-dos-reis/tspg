@@ -14,12 +14,11 @@ required: the primary key and the row types are never written by hand. It is a c
 of the generator reaches your code.
 
 ```sh
-npm i -D pg
 npx tspg-db generate --url "$DATABASE_URL" --schemas api --out src/db.ts
 ```
 
-It reads the connection string from `--url`, or `DATABASE_URL`, and connects with [`pg`](https://node-postgres.com),
-which your project installs. Without a database to hand, `--sql schema.sql` builds the schema from a SQL file in a
+It reads the connection string from `--url`, or `DATABASE_URL`, and connects with [`pg`](https://node-postgres.com), which
+the command carries: there is nothing else to install. Without a database to hand, `--sql schema.sql` builds the schema from a SQL file in a
 throwaway [PGlite](https://pglite.dev) database (install `@electric-sql/pglite`) and reads that; it cannot be combined
 with `--url`. `tspg-db --help` lists the options and examples. Put the command in a script to run again after a
 migration:
