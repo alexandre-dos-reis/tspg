@@ -28,11 +28,13 @@ The module holds:
 - a `Database` type: each table's `row` and `insert` shapes, primary key, and whether it can be written;
 - `keys`: each table's primary key columns and the code that builds a row's key — the value for one column, a
   composite key's values joined with `_` (`12_3`);
+- `collections(env)`: one TanStack DB descriptor (`collectionOptions(id, factory)`) per table with a primary key, the
+  same on the server and in the browser. `env` is `{ url, fetch?, headers?, syncMode? }`: what differs between the two.
 
 The generator runs on Node, at build time, and is the only part that touches the database; it is built on
-[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module imports nothing and holds
-no schema: only types and keys reach the bundle. Regenerate it after a
-migration. `name`, `keysName` and `header` are options. A composite-type column is typed `unknown`, and relationships are not in it: joins
+[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module holds no schema and no
+introspection: only types, keys and descriptors reach the bundle. Regenerate it after a
+migration. `name`, `keysName`, `collectionsName` and `header` are options (`withoutCollections: true` writes the type and keys alone). A composite-type column is typed `unknown`, and relationships are not in it: joins
 are the live queries'.
 
 ### What `insert` takes
@@ -52,23 +54,29 @@ are the live queries'.
 
 ## 2. Use it
 
-```ts
-import { QueryClient } from "@tanstack/query-core";
-import { createCollection } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-postgrest";
-import { type Database, keys } from "./db"; // the type is erased at build time; keys is the key construction
+The same code runs on the server and in the browser. `collections(env)` makes the descriptors; `env` is the URL, an
+optional custom `fetch` and optional `headers`. A `DbClient` (TanStack DB's SSR client) materializes them and gives the
+query client.
 
-const tspg = tspgClient<Database>({
-  url: "https://api.example.com", // where the PostgREST API is served
-  queryClient: new QueryClient(),
-  keys,
+```ts ignore
+import { QueryClient } from "@tanstack/query-core";
+import { DbClient } from "@tanstack/db";
+import { collections } from "./db"; // the generated module
+
+const { api } = collections({
+  url: "/api", // where the PostgREST API is served
   headers: async () => ({ Authorization: `Bearer ${await token()}` }),
+  // fetch: myFetch, // optional: a custom fetch (in process on a server, for example)
 });
 
-const orders = createCollection(tspg.collectionOptions("orders")); // rows are typed
-const lines = createCollection(tspg.collectionOptions("order_items")); // keyed "12_3": nothing to pass
-const things = createCollection(tspg.schema("v2").collectionOptions("things")); // Accept-Profile: v2
+const dbClient = new DbClient({ queryClient: new QueryClient() });
+const orders = dbClient.collection(api.orders); // rows are typed
+const lines = dbClient.collection(api.order_items); // keyed "12_3": nothing to pass
+const things = dbClient.collection(collections({ url: "/api" }).v2.things); // schema v2: Accept-Profile
 ```
+
+Each descriptor has a stable id that carries the schema (`"api.orders"`). A view has no primary key to generate, so it has
+no descriptor: use `tspgClient` for it (below).
 
 The compiler checks what the types know:
 
@@ -81,51 +89,41 @@ The compiler checks what the types know:
 
 ## SSR
 
-TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) works as its guide shows it. A collection is a
-descriptor, `collectionOptions(id, factory)`, that each `DbClient` materializes; the factory takes the query client from
-that `DbClient`, so every request on a server has its own. Build the collection options in it with `tspgClient`, the
-generated `Database` type and `keys`. The id must carry every parameter that changes the collection (the table, the
-schema, the sync mode, the filters).
-
-```ts ignore
-// collections.ts: shared by the server and the browser
-import type { QueryClient } from "@tanstack/query-core";
-import { collectionOptions } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-postgrest";
-import { keys, type Database } from "./db"; // the generated module
-
-export const todos = (env: { url: string; fetch?: typeof fetch; headers?: Record<string, string> }) =>
-  collectionOptions("api.todos", (client) =>
-    tspgClient<Database>({
-      ...env,
-      queryClient: client.requireDependency<QueryClient>("queryClient"),
-      keys,
-    }).collectionOptions("todos"),
-  );
-```
+TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) is built in, the way its guide shows it: the
+descriptors are `collectionOptions(id, factory)` and each `DbClient` gives its own query client, so a server makes a
+`QueryClient` and a `DbClient` per request. The only difference between the two sides is `env`.
 
 ```ts ignore
 // server, per request
-import { QueryClient } from "@tanstack/query-core";
-import { DbClient } from "@tanstack/db";
-import { todos } from "./collections";
-
 const dbClient = new DbClient({ queryClient: new QueryClient() });
-await dbClient
-  .collection(todos({ url: apiUrl, headers: { Authorization: request.headers.get("authorization")! } }))
-  .preload();
+const { api } = collections({ url: apiUrl, headers: { Authorization: request.headers.get("authorization")! } });
+await dbClient.collection(api.todos).preload();
 const state = dbClient.dehydrate(); // serialize it into the page
 
 // browser
 const browser = new DbClient({ queryClient: new QueryClient() });
 browser.hydrate(state);
-const collection = browser.collection(todos({ url: "/api" }));
+const todos = browser.collection(collections({ url: "/api" }).api.todos);
 ```
 
 Both sync modes work: `eager` rows are dehydrated with the collection, `on-demand` ones with the live queries that
 were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional until the collection syncs, and TanStack DB's
 own limits apply (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR
 provider yet).
+
+## `tspgClient`: views and custom ids
+
+The descriptors are made with `tspgClient`, which is public. Use it for a view (it names its key columns and is
+read-only) or to choose a collection's id and options:
+
+```ts ignore
+import { createCollection } from "@tanstack/db";
+import { tspgClient } from "@tspg/tanstack-db-postgrest";
+import { type Database, keys } from "./db";
+
+const tspg = tspgClient<Database>({ url: "/api", queryClient: new QueryClient(), keys });
+const totals = createCollection(tspg.collectionOptions("totals", { keyColumns: ["order_id"], readOnly: true }));
+```
 
 ## Sync modes
 
