@@ -3,6 +3,9 @@ import { QueryClient } from "@tanstack/query-core";
 import { and, createCollection, createLiveQueryCollection, eq, gt, inArray, length, not, or } from "@tanstack/db";
 import { tspgCollectionOptions } from "../src/index.ts";
 
+/** What `generate()` writes for a table keyed by `id`. */
+const byId = { pk: ["id"], key: (row: { id: number }) => row.id } as const;
+
 type Todo = { id: number; title: string; done: boolean; priority: number };
 const DB: Todo[] = [
   { id: 1, title: "a", done: false, priority: 3 },
@@ -27,6 +30,7 @@ function setup() {
     tspgCollectionOptions<Todo>({
       url: "http://x/api/",
       table: "todos",
+      key: byId,
       queryClient: new QueryClient(),
       fetch: fetchMock,
     }),
@@ -111,6 +115,7 @@ test("eager mode loads the whole table once and filters locally", async () => {
     tspgCollectionOptions<Todo>({
       url: "http://x/api",
       table: "todos",
+      key: byId,
       queryClient: new QueryClient(),
       syncMode: "eager",
       fetch: fetchMock,

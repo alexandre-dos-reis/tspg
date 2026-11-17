@@ -26,7 +26,7 @@ const todos = (syncMode: "eager" | "on-demand") =>
       url: "http://x/api",
       table: "todos",
       queryClient: new QueryClient(),
-      primaryKey: "id",
+      key: { pk: ["id"], key: (row: Todo) => row.id },
       fetch: fetchImpl,
       syncMode,
     }),

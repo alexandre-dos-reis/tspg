@@ -21,6 +21,9 @@ import { createRest, type RestInstance } from "../../rest/src/index";
 import { pgliteAdapter } from "../../adapters/src/pglite";
 import { tspgCollectionOptions, TspgRestError } from "../src/index";
 
+/** What `generate()` writes for a table keyed by `id`. */
+const byId = { pk: ["id"], key: (row: { id: number }) => row.id } as const;
+
 type Item = { id: number; name: string; qty: number | null; active: boolean };
 
 let db: PGlite;
@@ -66,6 +69,7 @@ function items() {
     tspgCollectionOptions<Item>({
       url: "http://test",
       table: "items",
+      key: byId,
       omitOnInsert: ["id"],
       queryClient: new QueryClient(),
       fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,
@@ -125,6 +129,7 @@ test("a PostgREST error becomes a TspgRestError", async () => {
     tspgCollectionOptions<Item>({
       url: "http://test",
       table: "nope",
+      key: byId,
       queryClient: new QueryClient(),
       fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,
     }),
@@ -145,6 +150,7 @@ test("eager mode against createRest: the whole table, filtered in memory", async
     tspgCollectionOptions<Item>({
       url: "http://test",
       table: "items",
+      key: byId,
       queryClient: new QueryClient(),
       syncMode: "eager",
       fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,
@@ -163,7 +169,7 @@ test("composite primary key: values joined with _, writes filter on every column
     tspgCollectionOptions<Line>({
       url: "http://test",
       table: "lines",
-      primaryKey: ["order_id", "line"],
+      key: { pk: ["order_id", "line"], key: (r: Line) => `${r.order_id}_${r.line}` },
       queryClient: new QueryClient(),
       syncMode: "eager",
       fetch: ((url: string, init?: RequestInit) => rest.handle(new Request(url, init))) as typeof fetch,

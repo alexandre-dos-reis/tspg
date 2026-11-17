@@ -3,6 +3,7 @@
 import type { QueryClient } from "@tanstack/query-core";
 import { tspgCollectionOptions } from "./collection.ts";
 import type { TspgCollectionConfig } from "./collection.ts";
+import { compositeKey } from "./postgrest.ts";
 
 /** What the generated `Database` holds for one table or view (a table, a view…). */
 export interface RelationShape {
@@ -25,17 +26,12 @@ export type RelationName<Db extends DatabaseShape, S extends SchemaName<Db> = Db
 type Rel<Db extends DatabaseShape, S extends SchemaName<Db>, T extends RelationName<Db, S>> = Db["schemas"][S][T];
 
 /**
- * The `id` default holds when the primary key is exactly `["id"]`. Any other key has to be named, and
- * must be the table's, unless the client was given the generated `keys`, which know it. A relation
- * without a key (a view) takes whichever columns identify a row.
+ * The key comes from the generated `keys`, so there is nothing to give. A relation without a primary key
+ * (a view) has none to generate: it names the columns that identify a row.
  */
-type PrimaryKeyOption<R extends RelationShape, Keyed extends boolean> = R["pk"] extends readonly ["id"]
-  ? { primaryKey?: R["pk"] }
-  : R["pk"] extends readonly []
-    ? { primaryKey: readonly (keyof R["row"] & string)[] }
-    : Keyed extends true
-      ? { primaryKey?: R["pk"] }
-      : { primaryKey: R["pk"] };
+type KeyOption<R extends RelationShape> = R["pk"] extends readonly []
+  ? { keyColumns: readonly (keyof R["row"] & string)[] }
+  : {};
 
 /** A relation `pg_relation_is_updatable` does not accept every write on (a view…) must be `readOnly`. */
 type WriteOption<R extends RelationShape> = [R["insertable"], R["updatable"], R["deletable"]] extends [true, true, true]
@@ -43,7 +39,7 @@ type WriteOption<R extends RelationShape> = [R["insertable"], R["updatable"], R[
   : { readOnly: true };
 
 /** Per-collection options of the typed client, checked against the relation's generated type. */
-export type TspgTableOptions<R extends RelationShape, Keyed extends boolean = false> = PrimaryKeyOption<R, Keyed> &
+export type TspgTableOptions<R extends RelationShape> = KeyOption<R> &
   WriteOption<R> & {
     /** Columns the database generates, left out of the `POST` body. */
     omitOnInsert?: readonly (keyof R["row"] & string)[];
@@ -64,8 +60,9 @@ export type TspgTableOptions<R extends RelationShape, Keyed extends boolean = fa
 export interface GeneratedKeys<Db extends DatabaseShape> {
   readonly default: Db["default"];
   readonly schemas: {
-    readonly [S in SchemaName<Db>]?: {
-      readonly [T in RelationName<Db, S>]?: {
+    readonly [S in SchemaName<Db>]: {
+      // a relation without a primary key (a view) has none to generate
+      readonly [T in RelationName<Db, S> as Db["schemas"][S][T]["pk"] extends readonly [] ? never : T]: {
         readonly pk: Readonly<Db["schemas"][S][T]["pk"]>;
         readonly key: (row: Db["schemas"][S][T]["row"]) => string | number;
       };
@@ -83,7 +80,7 @@ export interface TspgClientConfig {
   syncMode?: "eager" | "on-demand";
 }
 
-export interface TspgSchemaClient<Db extends DatabaseShape, S extends SchemaName<Db>, Keyed extends boolean = false> {
+export interface TspgSchemaClient<Db extends DatabaseShape, S extends SchemaName<Db>> {
   /**
    * Options for `createCollection(...)`, the row type read from the generated type.
    *
@@ -93,60 +90,54 @@ export interface TspgSchemaClient<Db extends DatabaseShape, S extends SchemaName
    */
   collectionOptions<T extends RelationName<Db, S>>(
     table: T,
-    ...options: {} extends TspgTableOptions<Rel<Db, S, T>, Keyed>
-      ? [options?: TspgTableOptions<Rel<Db, S, T>, Keyed>]
-      : [options: TspgTableOptions<Rel<Db, S, T>, Keyed>]
+    ...options: {} extends TspgTableOptions<Rel<Db, S, T>>
+      ? [options?: TspgTableOptions<Rel<Db, S, T>>]
+      : [options: TspgTableOptions<Rel<Db, S, T>>]
   ): ReturnType<typeof tspgCollectionOptions<Rel<Db, S, T>["row"]>>;
 }
 
-export interface TspgClient<Db extends DatabaseShape, Keyed extends boolean = false> extends TspgSchemaClient<
-  Db,
-  Db["default"],
-  Keyed
-> {
+export interface TspgClient<Db extends DatabaseShape> extends TspgSchemaClient<Db, Db["default"]> {
   /** Another schema of the API: the requests carry `Accept-Profile` / `Content-Profile`. */
-  schema<S extends SchemaName<Db>>(name: S): TspgSchemaClient<Db, S, Keyed>;
+  schema<S extends SchemaName<Db>>(name: S): TspgSchemaClient<Db, S>;
 }
 
 /**
  * A client typed by the generated `Database`: the tables are the ones that exist, each collection's
- * row is the table's `row`, and the primary key and writability are checked against it.
- *
- * Give it the `keys` that `generate()` (`@tspg/tanstack-db-query/generate`) emits and the key columns, and the code
- * that builds a composite key, come from there instead of being written by hand.
+ * row is the table's `row`, and writability is checked against it. The primary key is not given: the
+ * generated `keys` hold each table's key columns and the code that builds a row's key (a composite
+ * key's values joined with `_`), and are checked against the `Database`.
  *
  * ```ts
- * import type { Database } from "./db.generated"; // a type: nothing of it reaches the bundle
- * import { keys } from "./db.keys"; //                the generated key construction
+ * import { type Database, keys } from "./db"; // what `generate()` wrote: the type is erased from the bundle
  * const tspg = tspgClient<Database>({ url: "/api", queryClient, keys });
  * const lines = createCollection(tspg.collectionOptions("order_items")); // keyed "12_3", nothing to pass
  * ```
  */
 export function tspgClient<Db extends DatabaseShape>(
   config: TspgClientConfig & { keys: GeneratedKeys<Db> },
-): TspgClient<Db, true>;
-export function tspgClient<Db extends DatabaseShape>(config: TspgClientConfig): TspgClient<Db, false>;
-export function tspgClient<Db extends DatabaseShape>(
-  config: TspgClientConfig & { keys?: GeneratedKeys<Db> },
-): TspgClient<Db, boolean> {
+): TspgClient<Db> {
   const { keys, ...shared } = config;
   const forSchema = (schema?: string): TspgSchemaClient<Db, never> => ({
     collectionOptions: ((table: string, options: Record<string, unknown> = {}) => {
-      // the generated key construction, unless the caller names the key columns themselves
-      const generated =
-        options.primaryKey === undefined
-          ? (keys?.schemas as Record<string, Record<string, { pk: readonly string[]; key: never }>> | undefined)?.[
-              schema ?? keys?.default ?? ""
-            ]?.[table]
-          : undefined;
+      const { keyColumns, ...rest } = options as { keyColumns?: readonly string[] } & Record<string, unknown>;
+      const entry = (
+        keys.schemas as Record<string, Record<string, { pk: readonly string[]; key: (row: never) => string | number }>>
+      )[schema ?? keys.default]?.[table];
+      // a relation without a primary key (a view) names the columns that identify a row
+      const key =
+        entry ??
+        (keyColumns
+          ? { pk: keyColumns, key: (row: Record<string, unknown>) => compositeKey(keyColumns, row) }
+          : undefined);
+      if (!key) throw new Error(`tspg: no key for "${table}": regenerate the keys, or give keyColumns`);
       return tspgCollectionOptions({
         ...shared,
         ...(schema ? { schema } : {}),
-        ...(generated ? { primaryKey: generated.pk, getKey: generated.key } : {}),
-        ...options,
+        ...rest,
+        key: key as never,
         table,
       });
     }) as never,
   });
-  return { ...forSchema(), schema: (name) => forSchema(name) as never } as TspgClient<Db, boolean>;
+  return { ...forSchema(), schema: (name) => forSchema(name) as never } as TspgClient<Db>;
 }

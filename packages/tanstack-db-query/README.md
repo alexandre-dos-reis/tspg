@@ -9,20 +9,19 @@ npm i @tspg/tanstack-db-query @tanstack/db @tanstack/query-db-collection @tansta
 ```ts
 import { QueryClient } from "@tanstack/query-core";
 import { createCollection } from "@tanstack/db";
-import { tspgCollectionOptions, type TspgRow } from "@tspg/tanstack-db-query";
-import type { Database } from "./db"; // from `@tspg/tanstack-db-query/generate` (optional)
+import { tspgClient } from "@tspg/tanstack-db-query";
+import { type Database, keys } from "./db"; // written by `@tspg/tanstack-db-query/generate`, below
 
 const queryClient = new QueryClient();
 
-export const todos = createCollection(
-  tspgCollectionOptions<TspgRow<Database, "todos">>({
-    url: "/api", // where createRest's handle() is mounted
-    table: "todos",
-    queryClient,
-    primaryKey: "id", // or ["order_id", "line"]: the key is then "12_3"
-    headers: async () => ({ Authorization: `Bearer ${await token()}` }),
-  }),
-);
+const tspg = tspgClient<Database>({
+  url: "/api", // where createRest's handle() is mounted
+  queryClient,
+  keys,
+  headers: async () => ({ Authorization: `Bearer ${await token()}` }),
+});
+
+export const todos = createCollection(tspg.collectionOptions("todos")); // the row type and the key come from the database
 ```
 
 ## Types and keys from the database
@@ -64,14 +63,14 @@ The compiler checks what the types know:
 
 - the table is one that exists, in the schema chosen (`schema("v2")` for the others), and the row is its `row`;
 - `keys` has to match the `Database`: a table's key columns are the ones its type says;
-- without `keys`, the key is `"id"` unless the table's says otherwise, and then it has to be named (`primaryKey`) and to
-  be that key; the key is built by joining the columns with `_`, as the generated code does;
-- a relation that cannot take every write (a view) needs `readOnly: true`, and a view, which has no key, names the
-  columns that identify a row;
+- the primary key is never given: `keys` holds each table's key columns and the code that builds a row's key, and the
+  compiler checks that `keys` matches the `Database`;
+- a relation that cannot take every write (a view) needs `readOnly: true`, and a view, which has no primary key to
+  generate, names the columns that identify a row (`keyColumns`);
 - `omitOnInsert` and `filters` take column names.
 
-Without generated modules, `tspgCollectionOptions<Row>({ url, table, queryClient, primaryKey })` takes the row type by
-hand, and `getKey` replaces the key construction.
+Without a generated module, `tspgCollectionOptions<Row>({ url, table, queryClient, key })` takes the row type and the
+key by hand: `key: { pk: ["order_id", "line"], key: (row) => \`${row.order_id}_${row.line}\` }`.
 
 ## SSR
 
@@ -87,7 +86,7 @@ export const todos = collectionOptions("todos", () =>
     url: process.env.API_URL!, // absolute on the server: there is no page to resolve `/api` against
     table: "todos",
     queryClient: new QueryClient(), // inside the factory: one per `DbClient`, so one per request
-    primaryKey: "id",
+    key: { pk: ["id"], key: (row: Todo) => row.id }, // or the `keys` of `generate()`, through `tspgClient`
   }),
 );
 ```
