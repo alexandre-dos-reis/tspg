@@ -27,7 +27,7 @@ export const todos = createCollection(tspg.collectionOptions("todos")); // the r
 ## Types and keys from the database
 
 `@tspg/tanstack-db-postgrest/generate` reads the catalog and writes one module with nothing but what a client needs: a
-`Database` type (each table's `row`, `insert` and `update` shapes, primary key, and whether it can be written) and
+`Database` type (each table's `row` and `insert` shapes, primary key, and whether it can be written) and
 `keys`, which holds each table's primary key columns and the code that builds a row's key — the value for one column,
 a composite key's values joined with `_` (`12_3`). It has no imports of its own: the type is erased from the bundle
 and `keys` is a few functions. The generator runs on Node, at build time, and is the only part that touches the

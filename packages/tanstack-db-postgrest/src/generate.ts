@@ -19,7 +19,7 @@ const read = (c: string): string => `row${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(c) ?
 
 const isCache = (s: GenerateSource): s is SchemaCache => "relations" in s;
 
-const shape = (rel: Relation, rows: "row" | "insert" | "update"): string => {
+const shape = (rel: Relation, rows: "row" | "insert"): string => {
   const fields = rel.columns
     // a column the database refuses a value for (a stored generated one, an `ALWAYS` identity) cannot be inserted,
     // unless it is the primary key, which the client still holds the optimistic row by
@@ -28,16 +28,15 @@ const shape = (rel: Relation, rows: "row" | "insert" | "update"): string => {
       const t = `${columnType(c)}${c.nullable ? " | null" : ""}`;
       // On the way in, a column the database fills (a default) or accepts NULL for may be left out -- except the
       // primary key: a client that keeps rows by key needs one at once, for the optimistic row.
-      const optional =
-        rows === "update" || (rows === "insert" && !rel.pk.includes(c.name) && (c.hasDefault || c.nullable));
+      const optional = rows === "insert" && !rel.pk.includes(c.name) && (c.hasDefault || c.nullable);
       return `${tsKey(c.name)}${optional ? "?" : ""}: ${t}`;
     });
   return `{ ${fields.join("; ")} }`;
 };
 
 /**
- * The module a TanStack DB client needs, as text: a `Database` type of the tables and views (row, insert and
- * update shapes, primary key, whether each can be written) and `keys`, the code that turns a row into
+ * The module a TanStack DB client needs, as text: a `Database` type of the tables and views (row and
+ * insert shapes, primary key, whether each can be written) and `keys`, the code that turns a row into
  * its collection key -- the value for one key column, the values joined with `_` for several (`12_3`).
  *
  * It imports nothing, so a browser bundle takes the type with `import type` and `keys` is a few
@@ -75,7 +74,6 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
         `      ${tsKey(rel.name)}: {`,
         `        row: ${shape(rel, "row")};`,
         `        insert: ${shape(rel, "insert")};`,
-        `        update: ${shape(rel, "update")};`,
         `        pk: [${rel.pk.map((c) => JSON.stringify(c)).join(", ")}];`,
         `        insertable: ${rel.insertable};`,
         `        updatable: ${rel.updatable};`,

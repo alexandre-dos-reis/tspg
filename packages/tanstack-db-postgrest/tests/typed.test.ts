@@ -7,7 +7,6 @@ import { tspgClient, type TspgRow } from "../src/index";
 type Table<Row extends object, Pk extends readonly string[], W extends boolean = true, Insert extends object = Row> = {
   row: Row;
   insert: Insert;
-  update: Partial<Row>;
   pk: Pk;
   insertable: W;
   updatable: W;

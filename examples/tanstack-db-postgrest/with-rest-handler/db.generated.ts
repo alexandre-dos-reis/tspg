@@ -7,7 +7,6 @@ export type Database = {
       tags: {
         row: { id: number; todo_id: number; label: string };
         insert: { id: number; todo_id: number; label: string };
-        update: { id?: number; todo_id?: number; label?: string };
         pk: ["id"];
         insertable: true;
         updatable: true;
@@ -16,7 +15,6 @@ export type Database = {
       todos: {
         row: { id: number; owner: string; title: string; done: boolean; created: string };
         insert: { id: number; owner?: string; title: string; done?: boolean; created?: string };
-        update: { id?: number; owner?: string; title?: string; done?: boolean; created?: string };
         pk: ["id"];
         insertable: true;
         updatable: true;
