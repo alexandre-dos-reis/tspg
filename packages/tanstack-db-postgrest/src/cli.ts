@@ -1,13 +1,11 @@
-// Node-side: the command line of `generate`. It picks a driver, reads the catalog and writes the module a client
+// Node-side: the command line of `generate`. It reads the catalog and writes the module a client
 // imports -- so an application never imports the introspection (`@tspg/introspect` is inlined into the build).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { DbAdapter } from "@tspg/introspect";
-import { bunSqlAdapter } from "../../adapters/src/bun";
 import { nodePostgresAdapter } from "../../adapters/src/node-postgres";
 import { pgliteAdapter } from "../../adapters/src/pglite";
-import { postgresJsAdapter } from "../../adapters/src/postgres-js";
 import { generate } from "./generate";
 
 export const USAGE = `tspg-db: generate the module a @tspg/tanstack-db-postgrest client imports
@@ -16,8 +14,7 @@ Usage
   tspg-db generate [options]
 
 Where the catalog is read
-  --url <url>          a Postgres connection string (default: $DATABASE_URL)
-  --driver <name>      pg | postgres | bun (default: the first one installed, bun's own client under Bun)
+  --url <url>          a Postgres connection string, read with pg (default: $DATABASE_URL)
   --pglite <dir>       read a PGlite database instead: a directory, or "memory://" for an empty one
   --sql <file>         run a SQL file first (with --pglite; repeatable): the schema of a database made on the spot
 
@@ -52,10 +49,8 @@ const nodeIo = (): Io => ({
 
 class UsageError extends Error {}
 
-type Driver = "pg" | "postgres" | "bun";
-
-// The drivers are optional peers of nobody: the one the project already has is the one that is loaded, by name, at run
-// time. A module name held in a variable keeps the bundler from resolving (or failing on) the ones that are absent.
+// `pg` (and PGlite) are the project's own, not this package's: loaded by name at run time, so a project that does not
+// use one is not asked to install it. A module name held in a variable keeps the bundler from resolving it.
 const load = async (name: string): Promise<any> => {
   try {
     return await import(name);
@@ -69,29 +64,11 @@ const load = async (name: string): Promise<any> => {
   }
 };
 
-const connect = async (url: string, driver: Driver | undefined): Promise<DbAdapter> => {
-  const bun = (globalThis as { Bun?: { SQL?: new (url: string) => any } }).Bun;
-  const attempts: ReadonlyArray<Driver> = driver
-    ? [driver]
-    : ["pg", "postgres", ...(bun?.SQL ? (["bun"] as const) : [])];
-  for (const d of attempts) {
-    if (d === "pg") {
-      const mod = await load("pg");
-      const Pool = mod?.Pool ?? mod?.default?.Pool;
-      if (Pool) return nodePostgresAdapter(new Pool({ connectionString: url }));
-    } else if (d === "postgres") {
-      const mod = await load("postgres");
-      const postgres = mod?.default ?? mod;
-      if (typeof postgres === "function") return postgresJsAdapter(postgres(url));
-    } else if (bun?.SQL) {
-      return bunSqlAdapter(new bun.SQL(url));
-    }
-  }
-  throw new UsageError(
-    driver
-      ? `the "${driver}" driver is not installed here`
-      : "no Postgres driver found: install pg or postgres (or run the command with Bun)",
-  );
+const connect = async (url: string): Promise<DbAdapter> => {
+  const mod = await load("pg");
+  const Pool = mod?.Pool ?? mod?.default?.Pool;
+  if (!Pool) throw new UsageError("pg is not installed here: add it with your package manager (npm i -D pg)");
+  return nodePostgresAdapter(new Pool({ connectionString: url }));
 };
 
 const openPglite = async (dir: string, sql: ReadonlyArray<string>, io: Io): Promise<DbAdapter> => {
@@ -114,7 +91,6 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
       allowPositionals: true,
       options: {
         url: { type: "string" },
-        driver: { type: "string" },
         pglite: { type: "string" },
         sql: { type: "string", multiple: true },
         schemas: { type: "string" },
@@ -133,17 +109,15 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
     }
     if (positionals[0] !== "generate" || positionals.length > 1)
       throw new UsageError(`unknown command "${positionals.join(" ")}" (there is only "generate")`);
-    if (values.driver !== undefined && !["pg", "postgres", "bun"].includes(values.driver))
-      throw new UsageError(`unknown driver "${values.driver}" (pg, postgres or bun)`);
     if (values.sql?.length && values.pglite === undefined) throw new UsageError("--sql needs --pglite");
-    if (values.pglite !== undefined && (values.url !== undefined || values.driver !== undefined))
-      throw new UsageError("--pglite cannot be combined with --url or --driver");
+    if (values.pglite !== undefined && values.url !== undefined)
+      throw new UsageError("--pglite cannot be combined with --url");
 
     if (values.pglite !== undefined) db = await openPglite(values.pglite, values.sql ?? [], io);
     else {
       const url = values.url ?? io.env.DATABASE_URL;
       if (!url) throw new UsageError("no database: give --url, set DATABASE_URL, or read a PGlite one with --pglite");
-      db = await connect(url, values.driver as Driver | undefined);
+      db = await connect(url);
     }
 
     const schemas = (values.schemas ?? "public")

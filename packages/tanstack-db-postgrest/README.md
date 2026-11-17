@@ -14,12 +14,12 @@ required: the primary key and the row types are never written by hand. It is a c
 of the generator reaches your code.
 
 ```sh
-npm i -D pg   # or postgres: the driver your project already has
+npm i -D pg
 npx tspg-db generate --url "$DATABASE_URL" --schemas api --out src/db.ts
 ```
 
-It reads the connection string from `--url`, or `DATABASE_URL`, and uses `pg`, then `postgres`, then Bun's own client,
-whichever is installed (`--driver pg|postgres|bun` chooses). To read a [PGlite](https://pglite.dev) database, or one made
+It reads the connection string from `--url`, or `DATABASE_URL`, and connects with [`pg`](https://node-postgres.com),
+which your project installs. To read a [PGlite](https://pglite.dev) database, or one made
 on the spot from a SQL file, use `--pglite <dir | memory://> [--sql schema.sql]`. Put it in a script to run again after a
 migration:
 
@@ -30,7 +30,6 @@ migration:
 | option                                        | default                           |                                                                         |
 | --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
 | `--url`                                       | `$DATABASE_URL`                   | the connection string                                                   |
-| `--driver`                                    | the first installed               | `pg`, `postgres` or `bun`                                               |
 | `--pglite`, `--sql`                           |                                   | read PGlite instead; `--sql` runs a file first (repeatable)             |
 | `--schemas`                                   | `public`                          | the schemas to read, comma-separated; the first is the client's default |
 | `--out`                                       | `db.generated.ts`                 | the file to write (`-` for the standard output)                         |

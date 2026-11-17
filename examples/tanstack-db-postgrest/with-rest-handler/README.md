@@ -24,7 +24,7 @@ bun run link:examples tanstack-db-postgrest/with-rest-handler
   writes `db.generated.ts`: the `Database` type, `keys` (the primary key of each table and the code that builds a row's
   collection key) and `collections(env)`, one TanStack DB descriptor per table, ready for SSR. Here it reads a PGlite
   database made from `schema.sql` (`--pglite memory:// --sql schema.sql`); on a real database, `--url` (or
-  `DATABASE_URL`) with the `pg` or `postgres` driver you already have. Run it again after a migration. The primary key
+  `DATABASE_URL`) with `pg` installed. Run it again after a migration. The primary key
   is never written by hand, and the application imports no generator.
 - `main.ts` — `collections({ url, fetch })` and a `DbClient` (its query client is its own, as in TanStack DB's SSR
   guide). The `fetch` hands each request to

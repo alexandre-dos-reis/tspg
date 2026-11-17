@@ -62,8 +62,9 @@ test("mistakes are said, and exit 1", async () => {
   expect(errors[0]).toContain("no database");
   expect(await run("generate", "--sql", "schema.sql")).toBe(1);
   expect(errors[0]).toContain("--sql needs --pglite");
-  expect(await run("generate", "--driver", "mysql", "--url", "x")).toBe(1);
-  expect(errors[0]).toContain('unknown driver "mysql"');
+  expect(await run("generate", "--driver", "pg", "--url", "x")).toBe(1); // no choice of driver
+  expect(await run("generate", "--pglite", "memory://", "--url", "x")).toBe(1);
+  expect(errors[0]).toContain("cannot be combined");
   expect(await run("migrate")).toBe(1);
   expect(await run("generate", "--nope")).toBe(1);
   expect(await run("--help")).toBe(0);
