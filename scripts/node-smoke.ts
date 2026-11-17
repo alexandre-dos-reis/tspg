@@ -2,12 +2,11 @@
 //   bun run build && node scripts/node-smoke.ts      (Node >= 22.18 strips types natively)
 // Needs TEST_DATABASE_URL (a superuser URL of a throwaway server).
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { createRest } from "../packages/rest/dist/index.js";
 import { createQuery } from "../packages/query/dist/index.js";
-import { nodePostgresAdapter as introspectAdapter } from "../packages/introspect/dist/adapters/node-postgres.js";
-import { generate } from "../packages/tanstack-db-postgrest/dist/generate.js";
 import { buildQuery, compositeKey, tspgClient } from "../packages/tanstack-db-postgrest/dist/index.js";
 import { nodePostgresAdapter } from "../packages/rest/dist/adapters/node-postgres.js";
 
@@ -109,9 +108,13 @@ try {
   assert.match(generated, /name: string;/);
   assert.match(generated, /export const schema: SchemaDescriptor = /);
 
-  // tanstack-db-postgrest, built: the generator reads the catalog through @tspg/introspect (no @tspg/core at run
-  // time), and the client module loads on its own
-  const module = await generate({ db: introspectAdapter(pool as never), schemas: ["api"] });
+  // tanstack-db-postgrest, built: the generator is its command line (`tspg-db`, which reads the catalog itself:
+  // no other @tspg package at run time), and the client module loads on its own
+  const module = execFileSync(
+    process.execPath,
+    [new URL("../packages/tanstack-db-postgrest/dist/bin.js", import.meta.url).pathname, "generate", "--schemas", "api", "--out", "-"],
+    { encoding: "utf8", env: { ...process.env, DATABASE_URL: url.toString() } },
+  );
   assert.match(module, /export type Database = \{/);
   assert.match(module, /export const keys = \{/);
   assert.match(module, /export const collections = /);

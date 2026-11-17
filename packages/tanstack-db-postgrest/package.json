@@ -17,6 +17,9 @@
     "url": "git+https://github.com/alexandre-dos-reis/tspg.git",
     "directory": "packages/tanstack-db-postgrest"
   },
+  "bin": {
+    "tspg-db": "./dist/bin.js"
+  },
   "files": [
     "dist"
   ],
@@ -24,7 +27,6 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./generate": "./dist/generate.js",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -40,11 +42,19 @@
     "@tanstack/db": "1.0.0-rc.1.5",
     "@tanstack/query-core": "^5.90.15",
     "@tanstack/query-db-collection": "^1.5.2",
-    "@tspg/introspect": "workspace:*"
+    "@tspg/introspect": "workspace:*",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.16.0"
   },
   "peerDependencies": {
+    "@electric-sql/pglite": ">=0.2.0",
     "@tanstack/db": ">=1.0.0-rc.0",
     "@tanstack/query-core": "^5.90.15",
     "@tanstack/query-db-collection": "^1.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    }
   }
 }

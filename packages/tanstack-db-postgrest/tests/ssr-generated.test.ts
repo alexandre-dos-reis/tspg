@@ -40,7 +40,10 @@ beforeAll(async () => {
   rest = await createRest({ db: pgliteAdapter(db), schemas: ["api", "v2"], anonymousRole: "anon" });
   writeFileSync(
     file,
-    await generate({ db: pgliteAdapter(db), schemas: ["api", "v2"] }, { clientModule: "../src/index.ts" }),
+    (await generate({ db: pgliteAdapter(db), schemas: ["api", "v2"] })).replaceAll(
+      '"@tspg/tanstack-db-postgrest"',
+      '"../src/index.ts"',
+    ),
   );
   mod = await import(file.href);
   globalThis.fetch = (() => {

@@ -1,5 +1,6 @@
-// Node-side: reads the database catalog through `@tspg/introspect` (inlined into the build) and writes
-// the module a browser bundle imports. Nothing here reaches the client.
+// Node-side: reads the database catalog through `@tspg/introspect` (private, inlined into the build) and writes
+// the module a browser bundle imports. Nothing here reaches the client. It is not exported: the package's
+// command line (`tspg-db generate`, see `cli.ts`) is how the module is made.
 import { columnType, introspect, tsKey } from "@tspg/introspect";
 import type { DbSession, Relation, SchemaCache } from "@tspg/introspect";
 
@@ -15,13 +16,6 @@ export interface GenerateOptions {
   readonly header?: string | false;
   /** Name of the exported collections constant. Default `"collections"`. */
   readonly collectionsName?: string;
-  /**
-   * Leave out the SSR integration (`collections`), and with it every import: the module is then the type and
-   * the keys alone. Default `false`.
-   */
-  readonly withoutCollections?: boolean;
-  /** Where the module imports `tspgClient` from. Default `"@tspg/tanstack-db-postgrest"`. */
-  readonly clientModule?: string;
 }
 
 const read = (c: string): string => `row${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(c) ? `.${c}` : `[${JSON.stringify(c)}]`}`;
@@ -50,12 +44,6 @@ const shape = (rel: Relation, rows: "row" | "insert"): string => {
  *
  * It imports nothing, so a browser bundle takes the type with `import type` and `keys` is a few
  * functions. Pass both to `tspgClient<Database>({ keys })`. Regenerate after a migration.
- *
- * ```ts ignore
- * import { generate } from "@tspg/tanstack-db-postgrest/generate";
- * import { nodePostgresAdapter } from "@tspg/introspect/adapters/node-postgres";
- * writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schemas: ["api"] }));
- * ```
  *
  * A composite-type column is typed `unknown`: the client takes what the API sends.
  */
@@ -123,8 +111,6 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   type.push("  };", "};");
   keys.push("  },", "} as const;");
   const body = `${type.join("\n")}\n\n${keys.join("\n")}\n`;
-  if (options.withoutCollections) return `${header}${body}`;
-
   // The SSR integration, as TanStack DB documents it: a descriptor is `collectionOptions(id, factory)`, one id for
   // each table (the schema in it), and its factory takes the query client from the `DbClient` that materializes it
   // (`client.requireDependency("queryClient")`, `new DbClient({ queryClient })`). What differs between the server
@@ -132,7 +118,7 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   // argument of `collections(...)`: the descriptors are made where that is known, one set per request on a server.
   const envName = `${name}Env`;
   const collectionsName = options.collectionsName ?? "collections";
-  const from = JSON.stringify(options.clientModule ?? "@tspg/tanstack-db-postgrest");
+  const from = JSON.stringify("@tspg/tanstack-db-postgrest");
   const bySchema = new Map<string, string[]>();
   for (const { schema, table } of collected) {
     const client = schema === schemas[0] ? "tspg(client)" : `tspg(client).schema(${JSON.stringify(schema)})`;

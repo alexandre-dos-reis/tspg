@@ -6,7 +6,7 @@ copy it anywhere.
 
 ```sh
 npm install
-node gen-types.ts   # step 1: read the database, write db.generated.ts
+npm run gen:types   # step 1: tspg-db reads the database, writes db.generated.ts
 node main.ts        # step 2: use it (Node >= 22.18 runs TypeScript natively)
 ```
 
@@ -20,9 +20,12 @@ bun run link:examples tanstack-db-postgrest/with-rest-handler
 
 ## What it shows
 
-- `gen-types.ts` — `generate()` reads the catalog and writes `db.generated.ts`: the `Database` type, `keys` (the
-  primary key of each table and the code that builds a row's collection key) and `collections(env)`, one TanStack DB
-  descriptor per table, ready for SSR. Run it again after a migration. The primary key is never written by hand.
+- `npm run gen:types` — `tspg-db generate` (the command line of `@tspg/tanstack-db-postgrest`) reads the catalog and
+  writes `db.generated.ts`: the `Database` type, `keys` (the primary key of each table and the code that builds a row's
+  collection key) and `collections(env)`, one TanStack DB descriptor per table, ready for SSR. Here it reads a PGlite
+  database made from `schema.sql` (`--sql schema.sql`); on a real database, `--url` (or
+  `DATABASE_URL`) with `pg` installed. Run it again after a migration. The primary key
+  is never written by hand, and the application imports no generator.
 - `main.ts` — `collections({ url, fetch })` and a `DbClient` (its query client is its own, as in TanStack DB's SSR
   guide). The `fetch` hands each request to
   `pgRest.handle` in process: no server, no network. `dbClient.collection(api.todos)` gives a typed collection; a live

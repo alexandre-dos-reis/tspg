@@ -1,11 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
 
+/**
+ * The command line of `@tspg/tanstack-db-postgrest` (`tspg-db`) is a Node program, not library code: it reads files,
+ * parses `process.argv` and connects with the `pg` it bundles. It is built apart from the package's entries and
+ * nothing in the client imports it, so it is the one place a runtime and a driver may be named.
+ */
+const COMMAND_LINE = new Set([
+  "packages/tanstack-db-postgrest/src/cli.ts",
+  "packages/tanstack-db-postgrest/src/bin.ts",
+]);
+
 /** The library must not depend on any runtime or driver: callers pass an adapter. */
 describe("runtime-agnostic library", () => {
   test("packages/*/src does not reference Bun, node: builtins or a database driver", async () => {
     const offenders: string[] = [];
     for await (const file of new Glob("packages/*/src/**/*.ts").scan(".")) {
+      if (COMMAND_LINE.has(file)) continue;
       const text = (await Bun.file(file).text()).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""); // ignore comments
       if (
         /from\s+["'](bun|bun:[^"']*|node:[^"']*|pg|postgres|@electric-sql\/pglite)["']|\bBun\.|\bprocess\.|require\(|import\(["']bun/.test(
@@ -16,6 +27,15 @@ describe("runtime-agnostic library", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  test("nothing but the command line imports the command line", async () => {
+    const importers: string[] = [];
+    for await (const file of new Glob("packages/*/src/**/*.ts").scan(".")) {
+      if (COMMAND_LINE.has(file)) continue;
+      if (/from\s+["'][^"']*\/(cli|bin)(\.ts)?["']/.test(await Bun.file(file).text())) importers.push(file);
+    }
+    expect(importers).toEqual([]);
   });
 
   /**
