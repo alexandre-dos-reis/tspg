@@ -73,6 +73,31 @@ The compiler checks what the types know:
 Without generated modules, `tspgCollectionOptions<Row>({ url, table, queryClient, primaryKey })` takes the row type by
 hand, and `getKey` replaces the key construction.
 
+## SSR
+
+TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) (`DbClient`, `dehydrate()` / `hydrate()`) works with these collections: wrap the options in `collectionOptions(id, factory)`, and the server preloads while the browser hydrates the rows.
+
+```ts ignore
+import { QueryClient } from "@tanstack/query-core";
+import { collectionOptions } from "@tanstack/db";
+import { tspgCollectionOptions } from "@tspg/tanstack-db-query";
+
+export const todos = collectionOptions("todos", () =>
+  tspgCollectionOptions<Todo>({
+    url: process.env.API_URL!, // absolute on the server: there is no page to resolve `/api` against
+    table: "todos",
+    queryClient: new QueryClient(), // inside the factory: one per `DbClient`, so one per request
+    primaryKey: "id",
+  }),
+);
+```
+
+- Give the collection a stable `id` that carries every dynamic parameter (a schema, a tenant, a filter in `filters`).
+- Build the `QueryClient` inside the factory, and `headers` / `fetch` too when they depend on the request (a cookie, a token).
+- Both sync modes are tested: `eager` rows are dehydrated with the collection, `on-demand` ones with the live queries that were preloaded (`dbClient.preloadLiveQuery`).
+- Hydrated rows are provisional: the collection still syncs once in the browser. TanStack DB's own limits apply
+  (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
+
 ## Sync modes
 
 The package is built on TanStack DB's Query collection (`@tanstack/query-db-collection`), so it offers the modes
