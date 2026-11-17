@@ -19,8 +19,9 @@ npx tspg-db generate --url "$DATABASE_URL" --schemas api --out src/db.ts
 ```
 
 It reads the connection string from `--url`, or `DATABASE_URL`, and connects with [`pg`](https://node-postgres.com),
-which your project installs. To read a [PGlite](https://pglite.dev) database, give its
-directory with `--pglite <dir>`. Put it in a script to run again after a
+which your project installs. Without a database to hand, `--sql schema.sql`
+builds the schema from a SQL file in a throwaway [PGlite](https://pglite.dev) database (install `@electric-sql/pglite`)
+and reads that. Put it in a script to run again after a
 migration:
 
 ```json
@@ -30,7 +31,7 @@ migration:
 | option                                        | default                           |                                                                         |
 | --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
 | `--url`                                       | `$DATABASE_URL`                   | the connection string                                                   |
-| `--pglite`                                    |                                   | read the PGlite database in this directory instead                      |
+| `--sql`                                       |                                   | a SQL file to build the schema from, in PGlite, instead of `--url`      |
 | `--schemas`                                   | `public`                          | the schemas to read, comma-separated; the first is the client's default |
 | `--out`                                       | `db.generated.ts`                 | the file to write (`-` for the standard output)                         |
 | `--name`, `--keys-name`, `--collections-name` | `Database`, `keys`, `collections` | the names of what the module exports                                    |

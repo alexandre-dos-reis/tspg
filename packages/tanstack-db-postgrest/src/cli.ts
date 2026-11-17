@@ -1,6 +1,6 @@
 // Node-side: the command line of `generate`. It reads the catalog and writes the module a client
 // imports -- so an application never imports the introspection (`@tspg/introspect` is inlined into the build).
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { DbAdapter } from "@tspg/introspect";
@@ -15,7 +15,7 @@ Usage
 
 Where the catalog is read
   --url <url>          a Postgres connection string, read with pg (default: $DATABASE_URL)
-  --pglite <dir>       read a PGlite database instead: a directory, or "memory://" for an empty one
+  --sql <file>         or a SQL file: its schema is built in a throwaway PGlite database, and read from there
 
 What is written
   --schemas <a,b>      schemas to read (default: public); the first one is the default schema of the client
@@ -67,10 +67,11 @@ const connect = async (url: string): Promise<DbAdapter> => {
   return nodePostgresAdapter(new Pool({ connectionString: url }));
 };
 
-const openPglite = async (dir: string, io: Io): Promise<DbAdapter> => {
+const fromSql = async (file: string, io: Io): Promise<DbAdapter> => {
   const mod = await load("@electric-sql/pglite");
   if (!mod?.PGlite) throw new UsageError("@electric-sql/pglite is not installed here");
-  const pglite = new mod.PGlite(dir === "memory://" ? undefined : resolve(io.cwd, dir));
+  const pglite = new mod.PGlite();
+  await pglite.exec(readFileSync(resolve(io.cwd, file), "utf8"));
   return pgliteAdapter(pglite);
 };
 
@@ -86,7 +87,7 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
       allowPositionals: true,
       options: {
         url: { type: "string" },
-        pglite: { type: "string" },
+        sql: { type: "string" },
         schemas: { type: "string" },
         out: { type: "string" },
         name: { type: "string" },
@@ -101,13 +102,13 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
     }
     if (positionals[0] !== "generate" || positionals.length > 1)
       throw new UsageError(`unknown command "${positionals.join(" ")}" (there is only "generate")`);
-    if (values.pglite !== undefined && values.url !== undefined)
-      throw new UsageError("--pglite cannot be combined with --url");
+    if (values.sql !== undefined && values.url !== undefined)
+      throw new UsageError("--sql cannot be combined with --url");
 
-    if (values.pglite !== undefined) db = await openPglite(values.pglite, io);
+    if (values.sql !== undefined) db = await fromSql(values.sql, io);
     else {
       const url = values.url ?? io.env.DATABASE_URL;
-      if (!url) throw new UsageError("no database: give --url, set DATABASE_URL, or read a PGlite one with --pglite");
+      if (!url) throw new UsageError("no database: give --url, set DATABASE_URL, or build one from a file with --sql");
       db = await connect(url);
     }
 
