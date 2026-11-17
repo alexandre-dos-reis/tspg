@@ -1,5 +1,6 @@
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
-import type { QueryCollectionConfig } from "@tanstack/query-db-collection";
+import type { QueryCollectionConfig, QueryCollectionUtils } from "@tanstack/query-db-collection";
+import type { CollectionConfig } from "@tanstack/db";
 import type { QueryClient } from "@tanstack/query-core";
 import { buildQuery, keyFilter, TspgRestError } from "./postgrest.ts";
 import type { BuildQueryOptions } from "./postgrest.ts";
@@ -24,6 +25,20 @@ export interface InsertSchema<Insert, Row> {
     readonly types?: { readonly input: Insert; readonly output: Row } | undefined;
   };
 }
+/**
+ * What `createCollection(...)` takes, spelled out: an explicit type, so that nothing in the published
+ * declarations needs a recent TypeScript (an instantiation expression such as `ReturnType<typeof f<T>>`
+ * reads as `any` to an older language server).
+ */
+export type TspgCollectionOptions<Row extends object, Insert extends object = Row> = Omit<
+  CollectionConfig<Row, string | number, never, QueryCollectionUtils<Row, string | number, Row, unknown>>,
+  "schema" | "getKey" | "utils"
+> & {
+  getKey: (row: Row) => string | number;
+  schema: InsertSchema<Insert, Row>;
+  utils: QueryCollectionUtils<Row, string | number, Row, unknown>;
+};
+
 const passThrough = {
   "~standard": { version: 1, vendor: "tspg", validate: (value: unknown) => ({ value }) },
 };
@@ -183,10 +198,5 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
   // `insert()` is typed by the schema's input, and a collection without a schema takes its row there. The
   // generated `insert` shape (a key to hold the row by, the columns the database fills left out) is what a
   // client may give, so it goes in as the input of a schema that passes everything through.
-  return { ...options, schema: passThrough as InsertSchema<Insert, Row> } as unknown as typeof options & {
-    schema: InsertSchema<Insert, Row>;
-  } as Omit<typeof options, "schema" | "getKey"> & {
-    getKey: (row: Row) => string | number;
-    schema: InsertSchema<Insert, Row>;
-  };
+  return { ...options, schema: passThrough } as unknown as TspgCollectionOptions<Row, Insert>;
 }

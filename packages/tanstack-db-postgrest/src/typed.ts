@@ -2,7 +2,7 @@
 // takes the generated `Database` as a type (`import type`) and none of the server's code.
 import type { QueryClient } from "@tanstack/query-core";
 import { tspgCollectionOptions } from "./collection.ts";
-import type { TspgCollectionConfig } from "./collection.ts";
+import type { TspgCollectionConfig, TspgCollectionOptions } from "./collection.ts";
 import { compositeKey } from "./postgrest.ts";
 
 /** What the generated `Database` holds for one table or view (a table, a view…). */
@@ -94,7 +94,7 @@ export interface TspgSchemaClient<Db extends DatabaseShape, S extends SchemaName
     ...options: {} extends TspgTableOptions<Rel<Db, S, T>>
       ? [options?: TspgTableOptions<Rel<Db, S, T>>]
       : [options: TspgTableOptions<Rel<Db, S, T>>]
-  ): ReturnType<typeof tspgCollectionOptions<Rel<Db, S, T>["row"], Rel<Db, S, T>["insert"]>>;
+  ): TspgCollectionOptions<Rel<Db, S, T>["row"], Rel<Db, S, T>["insert"]>;
 }
 
 export interface TspgClient<Db extends DatabaseShape> extends TspgSchemaClient<Db, Db["default"]> {
