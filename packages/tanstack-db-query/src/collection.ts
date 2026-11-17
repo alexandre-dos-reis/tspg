@@ -69,13 +69,7 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
  * `col=op.value`, `order=` and `limit=`; inserts, updates and deletes become
  * POST, PATCH and DELETE keyed by the primary key.
  *
- * ```ts
- * const todos = createCollection(
- *   tspgCollectionOptions<TspgRow<Database, "todos">>({
- *     url: "/api", table: "todos", queryClient, key: keys.schemas.api.todos,
- *   }),
- * );
- * ```
+ * Internal: the public entry is `tspgClient`, which supplies `key` from the generated module.
  */
 export function tspgCollectionOptions<Row extends object>(config: TspgCollectionConfig<Row>) {
   const pk = config.key.pk;

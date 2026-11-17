@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/query-core";
 import { and, createCollection, createLiveQueryCollection, eq, gt, inArray, length, not, or } from "@tanstack/db";
-import { tspgCollectionOptions } from "../src/index.ts";
+import { tspgCollectionOptions } from "../src/collection.ts";
 
 /** What `generate()` writes for a table keyed by `id`. */
 const byId = { pk: ["id"], key: (row: { id: number }) => row.id } as const;

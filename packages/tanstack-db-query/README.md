@@ -68,22 +68,6 @@ The compiler checks what the types know:
   generate, names the columns that identify a row (`keyColumns`);
 - `omitOnInsert` and `filters` take column names.
 
-Without a generated module, `tspgCollectionOptions<Row>` takes the row type and the key by hand, as `key`: the primary
-key columns, which the writes filter on, and the function that builds the collection key.
-
-```ts
-import { tspgCollectionOptions } from "@tspg/tanstack-db-query";
-
-type Line = { order_id: number; line: number; qty: number };
-
-const lines = tspgCollectionOptions<Line>({
-  url: "/api",
-  table: "lines",
-  queryClient,
-  key: { pk: ["order_id", "line"], key: (row) => `${row.order_id}_${row.line}` },
-});
-```
-
 ## SSR
 
 TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) (`DbClient`, `dehydrate()` / `hydrate()`) works with these collections: wrap the options in `collectionOptions(id, factory)`, and the server preloads while the browser hydrates the rows.
@@ -91,16 +75,15 @@ TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) (`DbClient`,
 ```ts ignore
 import { QueryClient } from "@tanstack/query-core";
 import { collectionOptions } from "@tanstack/db";
-import { tspgCollectionOptions } from "@tspg/tanstack-db-query";
-import { keys } from "./db";
+import { tspgClient } from "@tspg/tanstack-db-query";
+import { type Database, keys } from "./db";
 
 export const todos = collectionOptions("todos", () =>
-  tspgCollectionOptions<Todo>({
+  tspgClient<Database>({
     url: process.env.API_URL!, // absolute on the server: there is no page to resolve `/api` against
-    table: "todos",
     queryClient: new QueryClient(), // inside the factory: one per `DbClient`, so one per request
-    key: keys.schemas.api.todos, // the entry `generate()` wrote for the table
-  }),
+    keys,
+  }).collectionOptions("todos"),
 );
 ```
 

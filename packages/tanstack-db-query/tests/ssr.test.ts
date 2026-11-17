@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/query-core";
 import { DbClient, collectionOptions, eq } from "@tanstack/db";
-import { tspgCollectionOptions } from "../src/index";
+import { tspgClient } from "../src/index";
 
 /**
  * TanStack DB's SSR: a descriptor (`collectionOptions(id, factory)`) is materialized per `DbClient`, the
@@ -20,16 +20,32 @@ const fetchImpl = (async (url: string) => {
 }) as unknown as typeof fetch;
 
 type Todo = { id: number; title: string; done: boolean };
+type Database = {
+  default: "api";
+  schemas: {
+    api: {
+      todos: {
+        row: Todo;
+        insert: Todo;
+        update: Partial<Todo>;
+        pk: ["id"];
+        insertable: true;
+        updatable: true;
+        deletable: true;
+      };
+    };
+  };
+};
+const keys = { default: "api", schemas: { api: { todos: { pk: ["id"], key: (row: Todo) => row.id } } } } as const;
+
 const todos = (syncMode: "eager" | "on-demand") =>
   collectionOptions(`todos-${syncMode}`, () =>
-    tspgCollectionOptions<Todo>({
+    tspgClient<Database>({
       url: "http://x/api",
-      table: "todos",
       queryClient: new QueryClient(),
-      key: { pk: ["id"], key: (row: Todo) => row.id },
+      keys,
       fetch: fetchImpl,
-      syncMode,
-    }),
+    }).collectionOptions("todos", { syncMode }),
   );
 
 test("an eager collection: preloaded on the server, hydrated in the browser", async () => {

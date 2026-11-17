@@ -19,7 +19,8 @@ import {
 } from "@tanstack/db";
 import { createRest, type RestInstance } from "../../rest/src/index";
 import { pgliteAdapter } from "../../adapters/src/pglite";
-import { tspgCollectionOptions, TspgRestError } from "../src/index";
+import { tspgCollectionOptions } from "../src/collection";
+import { TspgRestError } from "../src/index";
 
 /** What `generate()` writes for a table keyed by `id`. */
 const byId = { pk: ["id"], key: (row: { id: number }) => row.id } as const;
