@@ -7,37 +7,10 @@ server. The collections talk to the API over HTTP; only the generator reads the 
 npm i @tspg/tanstack-db-postgrest @tanstack/db @tanstack/query-db-collection @tanstack/query-core
 ```
 
-```ts
-import { QueryClient } from "@tanstack/query-core";
-import { createCollection } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-postgrest";
-import { type Database, keys } from "./db"; // written by `@tspg/tanstack-db-postgrest/generate`, below
-
-const queryClient = new QueryClient();
-
-const tspg = tspgClient<Database>({
-  url: "https://api.example.com", // where the PostgREST API is served
-  queryClient,
-  keys,
-  headers: async () => ({ Authorization: `Bearer ${await token()}` }),
-});
-
-export const todos = createCollection(tspg.collectionOptions("todos")); // the row type and the key come from the database
-```
-
-## Types and keys from the database
+## 1. Generate the module from the database
 
 `@tspg/tanstack-db-postgrest/generate` reads the catalog and writes one module with everything a client needs from the
-database:
-
-- a `Database` type: each table's `row` and `insert` shapes, primary key, and whether it can be written;
-- `keys`: each table's primary key columns and the code that builds a row's key — the value for one column, a
-  composite key's values joined with `_` (`12_3`);
-- `collections(env)`: one TanStack DB descriptor per table, ready for SSR (below).
-
-The generator runs on Node, at build time, and is the only part that touches the database; it is built on
-[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module itself only imports
-this package, `@tanstack/db` and `@tanstack/query-core`: nothing of the database reaches the bundle.
+database. It is required: the primary key and the row types are never written by hand.
 
 ```ts ignore
 import { writeFileSync } from "node:fs";
@@ -50,25 +23,48 @@ writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schem
 await pool.end();
 ```
 
-`collection.insert()` takes that `insert` shape, and reads are typed by `row`. In `insert`, a column with a default (or
-that accepts NULL) is optional: give it to choose the value, leave it out and the database fills it, and what is not
-given is not sent. A column the database refuses a value for (a stored generated column, an `ALWAYS` identity) is not
-in it. The primary key is required, even when the database makes its own: the collection keeps rows by key, so the
-optimistic row needs one at once. For a key the database makes up (an identity, a sequence) it is a placeholder,
-and the client keeps it out of the request (`keys` lists those columns as `generated`); a key the client can make
-(a `uuid`) is sent as given. An optimistic row holds only what was inserted until the refetch brings the database's
-own columns, so a live query that filters on a defaulted column does not see the row until then: give that column in
-the insert.
-Regenerate it after a migration. `name`, `keysName`, `collectionsName` and `header` are options, and
-`withoutCollections: true` writes the type and the keys alone, with no import; a composite-type column is typed
-`unknown`. Relationships are not in it: joins are the live queries'.
+The module holds:
+
+- a `Database` type: each table's `row` and `insert` shapes, primary key, and whether it can be written;
+- `keys`: each table's primary key columns and the code that builds a row's key — the value for one column, a
+  composite key's values joined with `_` (`12_3`);
+- `collections(env)`: one TanStack DB descriptor per table, for [SSR](#ssr).
+
+The generator runs on Node, at build time, and is the only part that touches the database; it is built on
+[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module itself only imports this
+package, `@tanstack/db` and `@tanstack/query-core`: nothing of the database reaches the bundle. Regenerate it after a
+migration. `name`, `keysName`, `collectionsName` and `header` are options, and `withoutCollections: true` writes the type
+and the keys alone, with no import. A composite-type column is typed `unknown`, and relationships are not in it: joins
+are the live queries'.
+
+### What `insert` takes
+
+`collection.insert()` takes the `insert` shape, and reads are typed by `row`.
+
+- A column with a default, or that accepts NULL, is optional: give it to choose the value, leave it out and the
+  database fills it. What is not given is not sent.
+- A column the database refuses a value for (a stored generated column, an `ALWAYS` identity) is not in it.
+- The primary key is required, even when the database makes its own: the collection keeps rows by key, so the
+  optimistic row needs one at once. For a key the database makes up (an identity, a sequence) it is a placeholder, and
+  the client keeps it out of the request (`keys` lists those columns as `generated`). A key the client can make (a
+  `uuid`) is sent as given.
+- An optimistic row holds only what was inserted until the refetch brings the database's own columns, so a live query
+  that filters on a defaulted column does not see the row until then: give that column in the insert.
+
+## 2. Use it
 
 ```ts
+import { QueryClient } from "@tanstack/query-core";
 import { createCollection } from "@tanstack/db";
 import { tspgClient } from "@tspg/tanstack-db-postgrest";
 import { type Database, keys } from "./db"; // the type is erased at build time; keys is the key construction
 
-const tspg = tspgClient<Database>({ url: "/api", queryClient, keys });
+const tspg = tspgClient<Database>({
+  url: "https://api.example.com", // where the PostgREST API is served
+  queryClient: new QueryClient(),
+  keys,
+  headers: async () => ({ Authorization: `Bearer ${await token()}` }),
+});
 
 const orders = createCollection(tspg.collectionOptions("orders")); // rows are typed
 const lines = createCollection(tspg.collectionOptions("order_items")); // keyed "12_3": nothing to pass
