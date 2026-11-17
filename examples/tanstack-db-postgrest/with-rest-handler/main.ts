@@ -3,11 +3,12 @@
 //   node main.ts
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
+import { QueryClient } from "@tanstack/query-core";
 import { createLiveQueryCollection, DbClient, eq } from "@tanstack/db";
 import { createRest } from "@tspg/rest";
 import { pgliteAdapter } from "@tspg/rest/adapters/pglite";
 import { restFetch } from "@tspg/tanstack-db-postgrest/rest";
-import { collections, type DatabaseEnv } from "./db.generated.ts";
+import { collections } from "./db.generated.ts";
 
 const pglite = new PGlite();
 await pglite.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -22,17 +23,18 @@ const pgRest = await createRest({
   },
 });
 
-// db.generated.ts holds one descriptor per table (`collections.api.todos`). What differs between the server and
-// the browser is given to the `DbClient`: here `restFetch` hands each request straight to `pgRest.handle`, so
-// there is no network. In a browser, `new DbClient({ tspg: { url: "/api" } })`. The `DbClient` is the unit of SSR:
-// a server makes one per request and `dehydrate()`s it, the browser `hydrate()`s its own.
-const db = new DbClient({
-  tspg: { url: "/", fetch: restFetch(pgRest), headers: { "X-User": "alice" } } satisfies DatabaseEnv,
-});
+// db.generated.ts holds `collections(env)`: one TanStack DB descriptor per table. `env` is what differs between the
+// server and the browser -- the URL, a `fetch`, headers: here `restFetch` hands each request straight to
+// `pgRest.handle`, so there is no network (in a browser: `collections({ url: "/api" })`). The query client comes from
+// the `DbClient`, as in TanStack DB's SSR guide. The `DbClient` is the unit of SSR: a server makes one per request and
+// `dehydrate()`s it, the browser `hydrate()`s its own.
+const queryClient = new QueryClient();
+const db = new DbClient({ queryClient });
+const { api } = collections({ url: "/", fetch: restFetch(pgRest), headers: { "X-User": "alice" } });
 
 // `eager` (the default) loads the table once. `syncMode: "on-demand"` would load only what a live query asks
 // for, its filters sent to the API.
-const todos = db.collection(collections.api.todos);
+const todos = db.collection(api.todos);
 await todos.preload();
 
 // A live query: TanStack DB keeps it up to date as the collection changes.

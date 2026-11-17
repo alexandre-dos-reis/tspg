@@ -125,42 +125,44 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   const body = `${type.join("\n")}\n\n${keys.join("\n")}\n`;
   if (options.withoutCollections) return `${header}${body}`;
 
-  // The SSR integration. A descriptor is `collectionOptions(id, factory)`: a module-level value, one id for
-  // each table (the schema in it), materialized by each `DbClient`. What differs between the server and the
-  // browser -- the URL, a `fetch` that calls the API in process, the identity of the request -- is not in the
-  // descriptor but in the `DbClient`, which is given it as `tspg`: `new DbClient({ tspg: { url, fetch } })`.
+  // The SSR integration, as TanStack DB documents it: a descriptor is `collectionOptions(id, factory)`, one id for
+  // each table (the schema in it), and its factory takes the query client from the `DbClient` that materializes it
+  // (`client.requireDependency("queryClient")`, `new DbClient({ queryClient })`). What differs between the server
+  // and the browser -- the URL, a `fetch` that calls the API in process, the identity of the request -- is the
+  // argument of `collections(...)`: the descriptors are made where that is known, one set per request on a server.
   const envName = `${name}Env`;
   const collectionsName = options.collectionsName ?? "collections";
   const from = JSON.stringify(options.clientModule ?? "@tspg/tanstack-db-postgrest");
   const bySchema = new Map<string, string[]>();
   for (const { schema, table } of collected) {
-    const client = schema === schemas[0] ? "client(db)" : `client(db).schema(${JSON.stringify(schema)})`;
+    const client = schema === schemas[0] ? "tspg(client)" : `tspg(client).schema(${JSON.stringify(schema)})`;
     bySchema.set(schema, [
       ...(bySchema.get(schema) ?? []),
-      `${tsKey(table)}: collectionOptions(${JSON.stringify(`${schema}.${table}`)}, (db) => ${client}.collectionOptions(${JSON.stringify(table)})),`,
+      `${tsKey(table)}: collectionOptions(${JSON.stringify(`${schema}.${table}`)}, (client) => ${client}.collectionOptions(${JSON.stringify(table)})),`,
     ]);
   }
-  const collections = [
-    `export const ${collectionsName} = {`,
-    ...schemas.flatMap((schema) => [
-      `  ${tsKey(schema)}: {`,
-      ...(bySchema.get(schema) ?? []).map((l) => `    ${l}`),
-      "  },",
-    ]),
-    "} as const;",
-  ];
   const head = [
-    'import { QueryClient } from "@tanstack/query-core";',
+    'import type { QueryClient } from "@tanstack/query-core";',
     'import { collectionOptions } from "@tanstack/db";',
     'import type { DbClient } from "@tanstack/db";',
     `import { tspgClient } from ${from};`,
     `import type { TspgClientConfig } from ${from};`,
   ].join("\n");
-  const env = `/** What a \`DbClient\` is given as \`tspg\`: where the API is, and how to reach it. Server and browser differ here. */
+  const collections = `/** Where the API is and how to reach it: the URL, a \`fetch\`, headers. The server and the browser differ here. */
 export type ${envName} = Omit<TspgClientConfig, "queryClient" | "keys">;
 
-// A client per \`DbClient\`, so one per request on the server: its query client is its own.
-const client = (db: DbClient) =>
-  tspgClient<${name}>({ ...db.requireDependency<${envName}>("tspg"), queryClient: new QueryClient(), keys: ${keysName} });`;
-  return `${header}${head}\n\n${body}\n${env}\n\n/** One descriptor per table that has a primary key (a view names its key columns: use \`tspgClient\`). */\n${collections.join("\n")}\n`;
+/**
+ * One TanStack DB descriptor per table that has a primary key (a view names its key columns: use \`tspgClient\`),
+ * with a stable id that carries the schema. The query client comes from the \`DbClient\`.
+ */
+export const ${collectionsName} = (env: ${envName}) => {
+  const tspg = (client: DbClient) =>
+    tspgClient<${name}>({ ...env, queryClient: client.requireDependency<QueryClient>("queryClient"), keys: ${keysName} });
+  return {
+${schemas
+  .flatMap((schema) => [`    ${tsKey(schema)}: {`, ...(bySchema.get(schema) ?? []).map((l) => `      ${l}`), "    },"])
+  .join("\n")}
+  } as const;
+};`;
+  return `${header}${head}\n\n${body}\n${collections}\n`;
 };

@@ -33,7 +33,7 @@ database:
 - a `Database` type: each table's `row` and `insert` shapes, primary key, and whether it can be written;
 - `keys`: each table's primary key columns and the code that builds a row's key — the value for one column, a
   composite key's values joined with `_` (`12_3`);
-- `collections`: one TanStack DB descriptor per table, ready for SSR (below).
+- `collections(env)`: one TanStack DB descriptor per table, ready for SSR (below).
 
 The generator runs on Node, at build time, and is the only part that touches the database; it is built on
 [`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module itself only imports
@@ -86,26 +86,28 @@ The compiler checks what the types know:
 
 ## SSR
 
-TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) is built in: the generated `collections` are
-descriptors (`collectionOptions(id, factory)`), one per table with a primary key, with a stable id that carries the
-schema (`"api.todos"`). A view has no key to generate: use `tspgClient` for it.
-
-What differs between the server and the browser is given to the `DbClient`, as `tspg`: the URL, a `fetch`, headers.
-The server makes a `DbClient` per request, preloads, and `dehydrate()`s it; the browser makes its own and
-`hydrate()`s the state.
+TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) is built in, in the way its guide shows it. The
+generated `collections(env)` makes the descriptors (`collectionOptions(id, factory)`): one per table with a primary key,
+with a stable id that carries the schema (`"api.todos"`). A view has no key to generate: use `tspgClient` for it. The
+query client comes from the `DbClient` (`new DbClient({ queryClient })`), as in the guide; what differs between the
+server and the browser is `env`: the URL, a `fetch`, headers.
 
 ```ts ignore
+import { QueryClient } from "@tanstack/query-core";
 import { DbClient } from "@tanstack/db";
 import { collections } from "./db"; // the generated module
 
 // browser
-const db = new DbClient({ tspg: { url: "/api" } });
-const todos = db.collection(collections.api.todos);
+const queryClient = new QueryClient();
+const dbClient = new DbClient({ queryClient });
+const { api } = collections({ url: "/api" });
+const todos = dbClient.collection(api.todos);
 ```
 
-Both sync modes work: `eager` rows are dehydrated with the collection, `on-demand` ones with the live queries that
-were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional, and TanStack DB's own limits apply
-(mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
+On the server, make a `QueryClient` and a `DbClient` per request, preload, and `dehydrate()` the `DbClient`; the browser
+`hydrate()`s it. Both sync modes work: `eager` rows are dehydrated with the collection, `on-demand` ones with the live
+queries that were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional, and TanStack DB's own limits
+apply (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
 
 ### On the server, without a request to yourself
 
@@ -115,21 +117,22 @@ second server. Give it the incoming request and the API sees the same caller (`c
 over, which is what `resolveContext` reads); without it the calls are anonymous.
 
 ```ts ignore
+import { QueryClient } from "@tanstack/query-core";
 import { DbClient } from "@tanstack/db";
 import { restFetch } from "@tspg/tanstack-db-postgrest/rest";
 import { collections } from "./db";
 import { pgRest } from "./rest.server"; // createRest(...): created once per process
 
 export async function loader(request: Request) {
-  const db = new DbClient({ tspg: { url: "/api", fetch: restFetch(pgRest, request) } });
-  await db.collection(collections.api.todos).preload();
-  return db.dehydrate();
+  const dbClient = new DbClient({ queryClient: new QueryClient() });
+  const { api } = collections({ url: "/api", fetch: restFetch(pgRest, request) });
+  await dbClient.collection(api.todos).preload();
+  return dbClient.dehydrate();
 }
 ```
 
 This is server-only code: it holds `pgRest`, so keep it in a module the browser never imports. The generated module and
-the rest of your code stay the same on both sides, which is what makes the code isomorphic: only the `DbClient` is
-different. The package does not depend on `@tspg/rest`; `restFetch` only needs `handle`.
+the rest of your code stay the same on both sides, which is what makes the code isomorphic: only `env` is different. The package does not depend on `@tspg/rest`; `restFetch` only needs `handle`.
 
 ## Sync modes
 

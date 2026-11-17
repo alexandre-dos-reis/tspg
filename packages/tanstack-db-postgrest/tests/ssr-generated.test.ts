@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
+import { QueryClient } from "@tanstack/query-core";
 import { DbClient } from "@tanstack/db";
 import { createRest, type RestInstance } from "../../rest/src/index";
 import { pgliteAdapter } from "../../adapters/src/pglite";
@@ -56,18 +57,18 @@ afterAll(async () => {
 });
 
 test("a descriptor for each table with a primary key, the schema in the id", () => {
-  const { collections } = mod;
+  const collections = mod.collections({ url: "/" });
   expect(Object.keys(collections.api).sort()).toEqual(["lines", "notes"]); // the view has no key: no descriptor
   expect(collections.api.notes.id).toBe("api.notes");
   expect(collections.v2.things.id).toBe("v2.things");
 });
 
 test("server: reads through restFetch, no network; the browser hydrates what was dehydrated", async () => {
-  const { collections } = mod;
-  const server = new DbClient({ tspg: { url: "/", fetch: restFetch(rest, new Request("http://app/")) } });
-  await server.collection(collections.api.notes).preload();
-  await server.collection(collections.api.lines).preload();
-  await server.collection(collections.v2.things).preload(); // another schema: sent as Accept-Profile
+  const onServer = mod.collections({ url: "/", fetch: restFetch(rest, new Request("http://app/")) });
+  const server = new DbClient({ queryClient: new QueryClient() });
+  await server.collection(onServer.api.notes).preload();
+  await server.collection(onServer.api.lines).preload();
+  await server.collection(onServer.v2.things).preload(); // another schema: sent as Accept-Profile
   const state = JSON.parse(JSON.stringify(server.dehydrate()));
   expect(state.collections.map((c: { collectionId: string }) => c.collectionId).sort()).toEqual([
     "api.lines",
@@ -76,14 +77,14 @@ test("server: reads through restFetch, no network; the browser hydrates what was
   ]);
 
   // the browser: its `fetch` is the real one, which fails here: the rows have to come from the state
-  const browser = new DbClient({ tspg: { url: "/api" } });
+  const inBrowser = mod.collections({ url: "/api" });
+  const browser = new DbClient({ queryClient: new QueryClient() });
   browser.hydrate(state);
-  expect([...browser.collection(collections.api.notes).keys()]).toEqual([1, 2]);
-  expect([...browser.collection(collections.api.lines).keys()]).toEqual(["12_3"]); // a composite key
-  expect([...browser.collection(collections.v2.things).keys()]).toEqual([1]);
+  expect([...browser.collection(inBrowser.api.notes).keys()]).toEqual([1, 2]);
+  expect([...browser.collection(inBrowser.api.lines).keys()]).toEqual(["12_3"]); // a composite key
+  expect([...browser.collection(inBrowser.v2.things).keys()]).toEqual([1]);
 });
 
-test("a client without the dependency says so", () => {
-  const { collections } = mod;
-  expect(() => new DbClient().collection(collections.api.notes)).toThrow();
+test("a DbClient without a queryClient says so", () => {
+  expect(() => new DbClient().collection(mod.collections({ url: "/" }).api.notes)).toThrow();
 });
