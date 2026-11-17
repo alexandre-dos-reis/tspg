@@ -19,9 +19,9 @@ npx tspg-db generate --url "$DATABASE_URL" --schemas api --out src/db.ts
 ```
 
 It reads the connection string from `--url`, or `DATABASE_URL`, and connects with [`pg`](https://node-postgres.com),
-which your project installs. Without a database to hand, `--sql schema.sql`
-builds the schema from a SQL file in a throwaway [PGlite](https://pglite.dev) database (install `@electric-sql/pglite`)
-and reads that. Put it in a script to run again after a
+which your project installs. Without a database to hand, `--sql schema.sql` builds the schema from a SQL file in a
+throwaway [PGlite](https://pglite.dev) database (install `@electric-sql/pglite`) and reads that; it cannot be combined
+with `--url`. `tspg-db --help` lists the options and examples. Put the command in a script to run again after a
 migration:
 
 ```json

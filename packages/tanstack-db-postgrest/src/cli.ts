@@ -1,5 +1,6 @@
-// Node-side: the command line of `generate`. It reads the catalog and writes the module a client
-// imports -- so an application never imports the introspection (`@tspg/introspect` is inlined into the build).
+// Node-side: the command line of `generate` (`tspg-db`, built as `dist/bin.js`). It reads the catalog of a database
+// -- `--url` with `pg`, or `--sql` into a throwaway PGlite -- and writes the module a client imports, so an
+// application never imports the generator or the introspection (`@tspg/introspect` is inlined into the build).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -8,24 +9,35 @@ import { nodePostgresAdapter } from "../../adapters/src/node-postgres";
 import { pgliteAdapter } from "../../adapters/src/pglite";
 import { generate } from "./generate";
 
-export const USAGE = `tspg-db: generate the module a @tspg/tanstack-db-postgrest client imports
+export const USAGE = `tspg-db: write the module a @tspg/tanstack-db-postgrest client imports (the Database type, the
+keys of every table and its TanStack DB collections), from the catalog of a Postgres database.
 
 Usage
   tspg-db generate [options]
 
-Where the catalog is read
-  --url <url>          a Postgres connection string, read with pg (default: $DATABASE_URL)
-  --sql <file>         or a SQL file: its schema is built in a throwaway PGlite database, and read from there
+Where the catalog is read from (one of the two)
+  --url <url>          a Postgres connection string, read with pg, which the project installs
+                       (default: $DATABASE_URL)
+  --sql <file>         a SQL file: its schema is built in a throwaway PGlite database, which is read instead.
+                       Needs @electric-sql/pglite; cannot be combined with --url
 
 What is written
-  --schemas <a,b>      schemas to read (default: public); the first one is the default schema of the client
-  --out <file>         output file (default: db.generated.ts); "-" writes to the standard output
+  --schemas <a,b>      the schemas to read, comma-separated (default: public); the first is the default
+                       schema of the client
+  --out <file>         the file to write (default: db.generated.ts); "-" writes to the standard output
   --name <name>        name of the exported database type (default: Database)
   --keys-name <name>   name of the exported keys constant (default: keys)
   --collections-name <name>
                        name of the exported collections constant (default: collections)
 
   -h, --help           show this help
+
+Examples
+  tspg-db generate --url postgres://localhost/app --schemas api --out src/db.ts
+  DATABASE_URL=postgres://localhost/app tspg-db generate --schemas api
+  tspg-db generate --sql schema.sql --schemas api
+
+Run it again after a migration. It exits with 1, and says why, when it cannot read the database or write the file.
 `;
 
 interface Io {
