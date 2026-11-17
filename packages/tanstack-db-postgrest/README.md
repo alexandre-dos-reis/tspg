@@ -44,6 +44,9 @@ writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schem
 await pool.end();
 ```
 
+`collection.insert()` takes that `insert` shape, and reads are typed by `row`. (An optimistic row holds only what was
+inserted until the refetch brings the database's own columns, so a live query that filters on a defaulted column does
+not see the row until then: give that column in the insert.)
 In `insert`, the primary key is required even when the database makes its own (an identity column): the collection keeps
 rows by key, so the client gives the optimistic row a temporary one, and `omitOnInsert` keeps it out of the request.
 Regenerate it after a migration. `name`, `keysName` and `header` are options; a composite-type column is typed

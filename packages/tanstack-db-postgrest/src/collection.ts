@@ -12,6 +12,22 @@ export type TspgRow<
   S extends SchemaName<Db> = Db["default"],
 > = Db["schemas"][S][Table]["row"];
 
+/**
+ * A standard schema (https://standardschema.dev) that checks nothing, to carry the type of what `insert()`
+ * takes (`Insert`) apart from the type of what the collection holds (`Row`).
+ */
+export interface InsertSchema<Insert, Row> {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (value: unknown) => { readonly value: Row };
+    readonly types?: { readonly input: Insert; readonly output: Row } | undefined;
+  };
+}
+const passThrough = {
+  "~standard": { version: 1, vendor: "tspg", validate: (value: unknown) => ({ value }) },
+};
+
 type HeadersInit_ = Record<string, string>;
 
 /** What identifies a row: its primary key columns, and the collection key made of them. */
@@ -71,7 +87,9 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
  *
  * Internal: the public entry is `tspgClient`, which supplies `key` from the generated module.
  */
-export function tspgCollectionOptions<Row extends object>(config: TspgCollectionConfig<Row>) {
+export function tspgCollectionOptions<Row extends object, Insert extends object = Row>(
+  config: TspgCollectionConfig<Row>,
+) {
   const pk = config.key.pk;
   const base = `${config.url.replace(/\/+$/, "")}/${encodeURIComponent(config.table)}`;
   const doFetch = config.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
@@ -104,7 +122,7 @@ export function tspgCollectionOptions<Row extends object>(config: TspgCollection
   const direct = config.afterWrite === "direct";
   const writable = !config.readOnly;
 
-  return queryCollectionOptions<Row>({
+  const options = queryCollectionOptions<Row>({
     queryClient: config.queryClient,
     syncMode,
     staleTime: config.staleTime,
@@ -161,4 +179,14 @@ export function tspgCollectionOptions<Row extends object>(config: TspgCollection
       },
     }),
   } as QueryCollectionConfig<Row>);
+
+  // `insert()` is typed by the schema's input, and a collection without a schema takes its row there. The
+  // generated `insert` shape (a key to hold the row by, the columns the database fills left out) is what a
+  // client may give, so it goes in as the input of a schema that passes everything through.
+  return { ...options, schema: passThrough as InsertSchema<Insert, Row> } as unknown as typeof options & {
+    schema: InsertSchema<Insert, Row>;
+  } as Omit<typeof options, "schema" | "getKey"> & {
+    getKey: (row: Row) => string | number;
+    schema: InsertSchema<Insert, Row>;
+  };
 }

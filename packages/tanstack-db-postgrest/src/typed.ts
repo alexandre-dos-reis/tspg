@@ -8,6 +8,7 @@ import { compositeKey } from "./postgrest.ts";
 /** What the generated `Database` holds for one table or view (a table, a view…). */
 export interface RelationShape {
   row: object;
+  insert: object;
   pk: readonly string[];
   insertable: boolean;
   updatable: boolean;
@@ -93,7 +94,7 @@ export interface TspgSchemaClient<Db extends DatabaseShape, S extends SchemaName
     ...options: {} extends TspgTableOptions<Rel<Db, S, T>>
       ? [options?: TspgTableOptions<Rel<Db, S, T>>]
       : [options: TspgTableOptions<Rel<Db, S, T>>]
-  ): ReturnType<typeof tspgCollectionOptions<Rel<Db, S, T>["row"]>>;
+  ): ReturnType<typeof tspgCollectionOptions<Rel<Db, S, T>["row"], Rel<Db, S, T>["insert"]>>;
 }
 
 export interface TspgClient<Db extends DatabaseShape> extends TspgSchemaClient<Db, Db["default"]> {

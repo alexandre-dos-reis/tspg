@@ -4,9 +4,9 @@ import { createCollection } from "@tanstack/db";
 import { tspgClient, type TspgRow } from "../src/index";
 
 /** What `generate()` writes for these tables: the `Database` type of a browser bundle. */
-type Table<Row extends object, Pk extends readonly string[], W extends boolean = true> = {
+type Table<Row extends object, Pk extends readonly string[], W extends boolean = true, Insert extends object = Row> = {
   row: Row;
-  insert: Partial<Row>;
+  insert: Insert;
   update: Partial<Row>;
   pk: Pk;
   insertable: W;
@@ -17,7 +17,12 @@ type Database = {
   default: "api";
   schemas: {
     api: {
-      orders: Table<{ id: number; client_id: number; total: number | null }, ["id"]>;
+      orders: Table<
+        { id: number; client_id: number; total: number | null },
+        ["id"],
+        true,
+        { id: number; client_id: number; total?: number | null }
+      >;
       order_items: Table<{ order_id: number; product_id: number; qty: number }, ["order_id", "product_id"]>;
       profiles: Table<{ client_id: number; bio: string | null }, ["client_id"]>;
       client_totals: Table<{ client_id: number; revenue: number | null }, [], false>;
@@ -109,6 +114,26 @@ test("a view has no primary key: it names the columns that identify a row, and i
     tspg.collectionOptions("client_totals", { keyColumns: ["client_id"], readOnly: false });
   };
   expect(compiles).toBeTypeOf("function"); // checked by the compiler, never run
+});
+
+test("insert() takes the generated insert shape: the key is required, the columns the database fills are not", async () => {
+  const orders = createCollection(tspg.collectionOptions("orders", { omitOnInsert: ["id"] }));
+  const compiles = () => {
+    orders.insert({ id: -1, client_id: 7 }); // `total` may be left out
+    // @ts-expect-error the key is required: the optimistic row is held by it
+    orders.insert({ client_id: 7 });
+    // @ts-expect-error `client_id` is required
+    orders.insert({ id: -1 });
+    // reads are typed by the row
+    const total: number | null | undefined = orders.get(1)?.total;
+    void total;
+  };
+  expect(compiles).toBeTypeOf("function"); // checked by the compiler, never run
+
+  // at run time the temporary key is held by the collection and kept out of the POST body
+  await orders.insert({ id: -1, client_id: 7 }).when("settled");
+  const post = calls.find((c) => c.method === "POST");
+  expect(post?.url).toEndWith("/orders");
 });
 
 test("omitOnInsert and filters name real columns", () => {

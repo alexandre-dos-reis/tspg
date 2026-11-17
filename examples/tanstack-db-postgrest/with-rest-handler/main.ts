@@ -49,8 +49,9 @@ const open = createLiveQueryCollection((q) =>
 await open.preload();
 console.log("open:", open.toArray.map((t) => t.title).join(", "));
 
-// An insert is optimistic: the row is there at once under a temporary id, and replaced by the server's.
-const tx = todos.insert({ id: -1, owner: "alice", title: "Ship it", done: false, created: new Date().toISOString() });
+// An insert is optimistic: the row is there at once under a temporary id, and replaced by the server's. The key
+// is required (the collection holds rows by it); `omitOnInsert` keeps it out of the request.
+const tx = todos.insert({ id: -1, title: "Ship it", done: false }); // the generated `insert` shape; `done` is given because the live query reads it
 console.log("optimistic:", open.toArray.map((t) => t.title).join(", "));
 await tx.when("settled");
 console.log("created", todos.toArray.find((t) => t.title === "Ship it")?.id);
