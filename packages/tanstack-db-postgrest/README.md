@@ -46,8 +46,9 @@ are the live queries'.
   optimistic row needs one at once. For a key the database makes up (an identity, a sequence) it is a placeholder, and
   the client keeps it out of the request (`keys` lists those columns as `generated`). A key the client can make (a
   `uuid`) is sent as given.
-- An optimistic row holds only what was inserted until the server's row comes back (it replaces the optimistic one, no refetch) with the database's own columns, so a live query
-  that filters on a defaulted column does not see the row until then: give that column in the insert.
+- An optimistic row holds only what was inserted, with no default filled in: the collection does not know the
+  database's defaults. The server's row replaces it when the write returns (no refetch), so a live query that filters on
+  a defaulted column does not see the row until then: give that column in the insert.
 
 ## 2. Use it
 
