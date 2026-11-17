@@ -27,7 +27,7 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
   table: string;
   queryClient: QueryClient;
   /**
-   * The key of a row, as `generate()` (`@tspg/tanstack-db-query/generate`) writes it from the database's
+   * The key of a row, as `generate()` (`@tspg/tanstack-db-postgrest/generate`) writes it from the database's
    * primary key: its columns, which the writes filter on, and the function that builds the collection
    * key from a row. Through `tspgClient` it is looked up for you.
    */

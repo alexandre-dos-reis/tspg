@@ -3,7 +3,7 @@
 Read a Postgres catalog into a structured description — tables, views, columns, primary and foreign keys, enums,
 composite types, functions — for code generators. It is **read-only** (it only queries the catalog) and has no
 generator of its own: each library writes the output it needs on top of it. `@tspg/rest` and `@tspg/query` use it, and so
-does [`@tspg/tanstack-db-query/generate`](../tanstack-db-query/README.md).
+does [`@tspg/tanstack-db-postgrest/generate`](../tanstack-db-postgrest/README.md).
 
 ```sh
 npm i @tspg/introspect pg

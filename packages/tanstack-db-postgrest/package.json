@@ -1,5 +1,5 @@
 {
-  "name": "@tspg/tanstack-db-query",
+  "name": "@tspg/tanstack-db-postgrest",
   "version": "0.0.0",
   "description": "TanStack DB collections over a PostgREST-compatible API: @tspg/rest, PostgREST, Supabase",
   "keywords": [
@@ -8,14 +8,14 @@
     "postgres",
     "postgrest",
     "tanstack",
-    "tanstack-db-query"
+    "tanstack-db-postgrest"
   ],
   "license": "MIT",
   "author": "Alexandre Dos Reis",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/alexandre-dos-reis/tspg.git",
-    "directory": "packages/tanstack-db-query"
+    "directory": "packages/tanstack-db-postgrest"
   },
   "files": [
     "dist"

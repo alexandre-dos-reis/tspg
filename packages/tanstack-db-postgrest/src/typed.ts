@@ -53,7 +53,7 @@ export type TspgTableOptions<R extends RelationShape> = KeyOption<R> &
   };
 
 /**
- * What `generate()` of `@tspg/tanstack-db-query/generate` emits, checked against the generated `Database`: each
+ * What `generate()` of `@tspg/tanstack-db-postgrest/generate` emits, checked against the generated `Database`: each
  * relation's key columns, and the function that builds a row's key (a composite key's values joined
  * with `_`).
  */

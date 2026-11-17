@@ -1,16 +1,16 @@
-# @tspg/tanstack-db-query
+# @tspg/tanstack-db-postgrest
 
 TanStack DB collections over a PostgREST-compatible API (`@tspg/rest`, PostgREST, Supabase).
 
 ```sh
-npm i @tspg/tanstack-db-query @tanstack/db @tanstack/query-db-collection @tanstack/query-core
+npm i @tspg/tanstack-db-postgrest @tanstack/db @tanstack/query-db-collection @tanstack/query-core
 ```
 
 ```ts
 import { QueryClient } from "@tanstack/query-core";
 import { createCollection } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-query";
-import { type Database, keys } from "./db"; // written by `@tspg/tanstack-db-query/generate`, below
+import { tspgClient } from "@tspg/tanstack-db-postgrest";
+import { type Database, keys } from "./db"; // written by `@tspg/tanstack-db-postgrest/generate`, below
 
 const queryClient = new QueryClient();
 
@@ -26,7 +26,7 @@ export const todos = createCollection(tspg.collectionOptions("todos")); // the r
 
 ## Types and keys from the database
 
-`@tspg/tanstack-db-query/generate` reads the catalog and writes one module with nothing but what a client needs: a
+`@tspg/tanstack-db-postgrest/generate` reads the catalog and writes one module with nothing but what a client needs: a
 `Database` type (each table's `row`, `insert` and `update` shapes, primary key, and whether it can be written) and
 `keys`, which holds each table's primary key columns and the code that builds a row's key — the value for one column,
 a composite key's values joined with `_` (`12_3`). It has no imports of its own: the type is erased from the bundle
@@ -36,7 +36,7 @@ database; it is built on [`@tspg/introspect`](../introspect/README.md), so it ne
 ```ts ignore
 import { writeFileSync } from "node:fs";
 import { Pool } from "pg";
-import { generate } from "@tspg/tanstack-db-query/generate";
+import { generate } from "@tspg/tanstack-db-postgrest/generate";
 import { nodePostgresAdapter } from "@tspg/introspect/adapters/node-postgres"; // or …/pglite, …/postgres-js, …/bun
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -49,7 +49,7 @@ Regenerate it after a migration. `name`, `keysName` and `header` are options; a 
 
 ```ts
 import { createCollection } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-query";
+import { tspgClient } from "@tspg/tanstack-db-postgrest";
 import { type Database, keys } from "./db"; // the type is erased at build time; keys is the key construction
 
 const tspg = tspgClient<Database>({ url: "/api", queryClient, keys });
@@ -75,7 +75,7 @@ TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) (`DbClient`,
 ```ts ignore
 import { QueryClient } from "@tanstack/query-core";
 import { collectionOptions } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-query";
+import { tspgClient } from "@tspg/tanstack-db-postgrest";
 import { type Database, keys } from "./db";
 
 export const todos = collectionOptions("todos", () =>
