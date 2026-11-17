@@ -105,10 +105,10 @@ On the server, make a `QueryClient` and a `DbClient` per request, preload, and `
 queries that were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional, and TanStack DB's own limits
 apply (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
 
-### On the server, without a request to yourself
+### If you use `@tspg/rest`: no request to yourself
 
-`@tspg/tanstack-db-postgrest/rest` is for a server that runs the API itself, `@tspg/rest` or anything with a
-`handle(Request): Promise<Response>`. `restFetch` is a `fetch` that calls it directly: in process, no network, no
+When the same server runs the API with [`@tspg/rest`](../rest/README.md) (or anything with a
+`handle(Request): Promise<Response>`), `@tspg/tanstack-db-postgrest/rest` saves SSR a request to itself. `restFetch` is a `fetch` that calls it directly: in process, no network, no
 second server. Give it the incoming request and the API sees the same caller (`cookie` and `authorization` are carried
 over, which is what `resolveContext` reads); without it the calls are anonymous.
 
