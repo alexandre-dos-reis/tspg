@@ -81,18 +81,20 @@ The compiler checks what the types know:
 
 ## SSR
 
-TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) works as its guide shows it: a descriptor is
-`collectionOptions(id, factory)`, and the factory takes the query client from the `DbClient`
-(`new DbClient({ queryClient })`). Build the client inside the factory with `tspgClient` and the generated `keys`; the id
-carries every dynamic parameter. What differs between the server and the browser (the URL, a `fetch`, headers) is yours.
+TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) works as its guide shows it. A collection is a
+descriptor, `collectionOptions(id, factory)`, that each `DbClient` materializes; the factory takes the query client from
+that `DbClient`, so every request on a server has its own. Build the collection options in it with `tspgClient`, the
+generated `Database` type and `keys`. The id must carry every parameter that changes the collection (the table, the
+schema, the sync mode, the filters).
 
 ```ts ignore
+// collections.ts: shared by the server and the browser
 import type { QueryClient } from "@tanstack/query-core";
-import { collectionOptions, DbClient } from "@tanstack/db";
+import { collectionOptions } from "@tanstack/db";
 import { tspgClient } from "@tspg/tanstack-db-postgrest";
 import { keys, type Database } from "./db"; // the generated module
 
-export const todos = (env: { url: string; fetch?: typeof fetch }) =>
+export const todos = (env: { url: string; fetch?: typeof fetch; headers?: Record<string, string> }) =>
   collectionOptions("api.todos", (client) =>
     tspgClient<Database>({
       ...env,
@@ -100,16 +102,30 @@ export const todos = (env: { url: string; fetch?: typeof fetch }) =>
       keys,
     }).collectionOptions("todos"),
   );
-
-// browser
-const dbClient = new DbClient({ queryClient: new QueryClient() });
-const collection = dbClient.collection(todos({ url: "/api" }));
 ```
 
-On the server, make a `QueryClient` and a `DbClient` per request, preload, and `dehydrate()` the `DbClient`; the browser
-`hydrate()`s it. Both sync modes work: `eager` rows are dehydrated with the collection, `on-demand` ones with the live
-queries that were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional, and TanStack DB's own limits
-apply (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
+```ts ignore
+// server, per request
+import { QueryClient } from "@tanstack/query-core";
+import { DbClient } from "@tanstack/db";
+import { todos } from "./collections";
+
+const dbClient = new DbClient({ queryClient: new QueryClient() });
+await dbClient
+  .collection(todos({ url: apiUrl, headers: { Authorization: request.headers.get("authorization")! } }))
+  .preload();
+const state = dbClient.dehydrate(); // serialize it into the page
+
+// browser
+const browser = new DbClient({ queryClient: new QueryClient() });
+browser.hydrate(state);
+const collection = browser.collection(todos({ url: "/api" }));
+```
+
+Both sync modes work: `eager` rows are dehydrated with the collection, `on-demand` ones with the live queries that
+were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional until the collection syncs, and TanStack DB's
+own limits apply (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR
+provider yet).
 
 ## Sync modes
 
