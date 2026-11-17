@@ -1,0 +1,180 @@
+// Node-side: the command line of `generate`. It picks a driver, reads the catalog and writes the module a client
+// imports -- so an application never imports the introspection (`@tspg/introspect` is inlined into the build).
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { parseArgs } from "node:util";
+import type { DbAdapter } from "@tspg/introspect";
+import { bunSqlAdapter } from "../../adapters/src/bun";
+import { nodePostgresAdapter } from "../../adapters/src/node-postgres";
+import { pgliteAdapter } from "../../adapters/src/pglite";
+import { postgresJsAdapter } from "../../adapters/src/postgres-js";
+import { generate } from "./generate";
+
+export const USAGE = `tspg-db: generate the module a @tspg/tanstack-db-postgrest client imports
+
+Usage
+  tspg-db generate [options]
+
+Where the catalog is read
+  --url <url>          a Postgres connection string (default: $DATABASE_URL)
+  --driver <name>      pg | postgres | bun (default: the first one installed, bun's own client under Bun)
+  --pglite <dir>       read a PGlite database instead: a directory, or "memory://" for an empty one
+  --sql <file>         run a SQL file first (with --pglite; repeatable): the schema of a database made on the spot
+
+What is written
+  --schemas <a,b>      schemas to read (default: public); the first one is the default schema of the client
+  --out <file>         output file (default: db.generated.ts); "-" writes to the standard output
+  --name <name>        name of the exported database type (default: Database)
+  --keys-name <name>   name of the exported keys constant (default: keys)
+  --collections-name <name>
+                       name of the exported collections constant (default: collections)
+  --client-module <m>  where the module imports tspgClient from (default: @tspg/tanstack-db-postgrest)
+  --without-collections
+                       write the type and the keys alone, with no import
+
+  -h, --help           show this help
+`;
+
+interface Io {
+  readonly log: (line: string) => void;
+  readonly error: (line: string) => void;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Where relative paths are resolved from. */
+  readonly cwd: string;
+}
+
+const nodeIo = (): Io => ({
+  log: (l) => console.log(l),
+  error: (l) => console.error(l),
+  env: process.env,
+  cwd: process.cwd(),
+});
+
+class UsageError extends Error {}
+
+type Driver = "pg" | "postgres" | "bun";
+
+// The drivers are optional peers of nobody: the one the project already has is the one that is loaded, by name, at run
+// time. A module name held in a variable keeps the bundler from resolving (or failing on) the ones that are absent.
+const load = async (name: string): Promise<any> => {
+  try {
+    return await import(name);
+  } catch (e) {
+    if (
+      (e as { code?: string }).code === "ERR_MODULE_NOT_FOUND" ||
+      (e as { code?: string }).code === "MODULE_NOT_FOUND"
+    )
+      return undefined;
+    throw e;
+  }
+};
+
+const connect = async (url: string, driver: Driver | undefined): Promise<DbAdapter> => {
+  const bun = (globalThis as { Bun?: { SQL?: new (url: string) => any } }).Bun;
+  const attempts: ReadonlyArray<Driver> = driver
+    ? [driver]
+    : ["pg", "postgres", ...(bun?.SQL ? (["bun"] as const) : [])];
+  for (const d of attempts) {
+    if (d === "pg") {
+      const mod = await load("pg");
+      const Pool = mod?.Pool ?? mod?.default?.Pool;
+      if (Pool) return nodePostgresAdapter(new Pool({ connectionString: url }));
+    } else if (d === "postgres") {
+      const mod = await load("postgres");
+      const postgres = mod?.default ?? mod;
+      if (typeof postgres === "function") return postgresJsAdapter(postgres(url));
+    } else if (bun?.SQL) {
+      return bunSqlAdapter(new bun.SQL(url));
+    }
+  }
+  throw new UsageError(
+    driver
+      ? `the "${driver}" driver is not installed here`
+      : "no Postgres driver found: install pg or postgres (or run the command with Bun)",
+  );
+};
+
+const openPglite = async (dir: string, sql: ReadonlyArray<string>, io: Io): Promise<DbAdapter> => {
+  const mod = await load("@electric-sql/pglite");
+  if (!mod?.PGlite) throw new UsageError("@electric-sql/pglite is not installed here");
+  const pglite = new mod.PGlite(dir === "memory://" ? undefined : resolve(io.cwd, dir));
+  for (const file of sql) await pglite.exec(readFileSync(resolve(io.cwd, file), "utf8"));
+  return pgliteAdapter(pglite);
+};
+
+/**
+ * `tspg-db generate`: what `argv` (without the node and script paths) asks for. Resolves to the exit code; it
+ * prints its own errors.
+ */
+export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Promise<number> => {
+  let db: DbAdapter | undefined;
+  try {
+    const { values, positionals } = parseArgs({
+      args: [...argv],
+      allowPositionals: true,
+      options: {
+        url: { type: "string" },
+        driver: { type: "string" },
+        pglite: { type: "string" },
+        sql: { type: "string", multiple: true },
+        schemas: { type: "string" },
+        out: { type: "string" },
+        name: { type: "string" },
+        "keys-name": { type: "string" },
+        "collections-name": { type: "string" },
+        "client-module": { type: "string" },
+        "without-collections": { type: "boolean" },
+        help: { type: "boolean", short: "h" },
+      },
+    });
+    if (values.help || positionals.length === 0) {
+      io.log(USAGE);
+      return values.help ? 0 : 1;
+    }
+    if (positionals[0] !== "generate" || positionals.length > 1)
+      throw new UsageError(`unknown command "${positionals.join(" ")}" (there is only "generate")`);
+    if (values.driver !== undefined && !["pg", "postgres", "bun"].includes(values.driver))
+      throw new UsageError(`unknown driver "${values.driver}" (pg, postgres or bun)`);
+    if (values.sql?.length && values.pglite === undefined) throw new UsageError("--sql needs --pglite");
+    if (values.pglite !== undefined && (values.url !== undefined || values.driver !== undefined))
+      throw new UsageError("--pglite cannot be combined with --url or --driver");
+
+    if (values.pglite !== undefined) db = await openPglite(values.pglite, values.sql ?? [], io);
+    else {
+      const url = values.url ?? io.env.DATABASE_URL;
+      if (!url) throw new UsageError("no database: give --url, set DATABASE_URL, or read a PGlite one with --pglite");
+      db = await connect(url, values.driver as Driver | undefined);
+    }
+
+    const schemas = (values.schemas ?? "public")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const module = await generate(
+      { db, schemas },
+      {
+        ...(values.name !== undefined ? { name: values.name } : {}),
+        ...(values["keys-name"] !== undefined ? { keysName: values["keys-name"] } : {}),
+        ...(values["collections-name"] !== undefined ? { collectionsName: values["collections-name"] } : {}),
+        ...(values["client-module"] !== undefined ? { clientModule: values["client-module"] } : {}),
+        ...(values["without-collections"] ? { withoutCollections: true } : {}),
+      },
+    );
+    const out = values.out ?? "db.generated.ts";
+    if (out === "-") io.log(module.trimEnd());
+    else {
+      const path = resolve(io.cwd, out);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, module);
+      io.log(`${out}: ${module.split("\n").length} lines`);
+    }
+    return 0;
+  } catch (e) {
+    if (e instanceof UsageError || (e as { code?: string }).code?.startsWith("ERR_PARSE_ARGS"))
+      io.error(`tspg-db: ${(e as Error).message}\nRun tspg-db --help for the options.`);
+    else io.error(`tspg-db: ${(e as Error).message}`);
+    return 1;
+  } finally {
+    await db?.close?.().catch(() => {});
+  }
+};

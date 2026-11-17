@@ -9,19 +9,34 @@ npm i @tspg/tanstack-db-postgrest @tanstack/db @tanstack/query-db-collection @ta
 
 ## 1. Generate the module from the database
 
-`@tspg/tanstack-db-postgrest/generate` reads the catalog and writes one module with everything a client needs from the
-database. It is required: the primary key and the row types are never written by hand.
+`tspg-db generate` reads the catalog and writes one module with everything a client needs from the database. It is
+required: the primary key and the row types are never written by hand. It is a command line, not an import: nothing
+of the generator reaches your code.
 
-```ts ignore
-import { writeFileSync } from "node:fs";
-import { Pool } from "pg";
-import { generate } from "@tspg/tanstack-db-postgrest/generate";
-import { nodePostgresAdapter } from "@tspg/introspect/adapters/node-postgres"; // or …/pglite, …/postgres-js, …/bun
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schemas: ["api"] }));
-await pool.end();
+```sh
+npm i -D pg   # or postgres: the driver your project already has
+npx tspg-db generate --url "$DATABASE_URL" --schemas api --out src/db.ts
 ```
+
+It reads the connection string from `--url`, or `DATABASE_URL`, and uses `pg`, then `postgres`, then Bun's own client,
+whichever is installed (`--driver pg|postgres|bun` chooses). To read a [PGlite](https://pglite.dev) database, or one made
+on the spot from a SQL file, use `--pglite <dir | memory://> [--sql schema.sql]`. Put it in a script to run again after a
+migration:
+
+```json
+{ "scripts": { "gen:db": "tspg-db generate --schemas api --out src/db.ts" } }
+```
+
+| option                                        | default                           |                                                                         |
+| --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
+| `--url`                                       | `$DATABASE_URL`                   | the connection string                                                   |
+| `--driver`                                    | the first installed               | `pg`, `postgres` or `bun`                                               |
+| `--pglite`, `--sql`                           |                                   | read PGlite instead; `--sql` runs a file first (repeatable)             |
+| `--schemas`                                   | `public`                          | the schemas to read, comma-separated; the first is the client's default |
+| `--out`                                       | `db.generated.ts`                 | the file to write (`-` for the standard output)                         |
+| `--name`, `--keys-name`, `--collections-name` | `Database`, `keys`, `collections` | the names of what the module exports                                    |
+| `--client-module`                             | `@tspg/tanstack-db-postgrest`     | where the module imports `tspgClient` from                              |
+| `--without-collections`                       |                                   | write the type and the keys alone, with no import                       |
 
 The module holds:
 
@@ -31,11 +46,9 @@ The module holds:
 - `collections(env)`: one TanStack DB descriptor (`collectionOptions(id, factory)`) per table with a primary key, the
   same on the server and in the browser. `env` is `{ url, fetch?, headers?, syncMode? }`: what differs between the two.
 
-The generator runs on Node, at build time, and is the only part that touches the database; it is built on
-[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module holds no schema and no
-introspection: only types, keys and descriptors reach the bundle. Regenerate it after a
-migration. `name`, `keysName`, `collectionsName` and `header` are options (`withoutCollections: true` writes the type and keys alone). A composite-type column is typed `unknown`, and relationships are not in it: joins
-are the live queries'.
+The command runs on Node, at build time, and is the only part that touches the database. The module holds no schema and
+no introspection: only types, keys and descriptors reach the bundle. Regenerate it after a migration. A composite-type
+column is typed `unknown`, and relationships are not in it: joins are the live queries'.
 
 ### What `insert` takes
 

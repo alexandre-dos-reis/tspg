@@ -1,5 +1,6 @@
-// Node-side: reads the database catalog through `@tspg/introspect` (inlined into the build) and writes
-// the module a browser bundle imports. Nothing here reaches the client.
+// Node-side: reads the database catalog through `@tspg/introspect` (private, inlined into the build) and writes
+// the module a browser bundle imports. Nothing here reaches the client. It is not exported: the package's
+// command line (`tspg-db generate`, see `cli.ts`) is how the module is made.
 import { columnType, introspect, tsKey } from "@tspg/introspect";
 import type { DbSession, Relation, SchemaCache } from "@tspg/introspect";
 
@@ -50,12 +51,6 @@ const shape = (rel: Relation, rows: "row" | "insert"): string => {
  *
  * It imports nothing, so a browser bundle takes the type with `import type` and `keys` is a few
  * functions. Pass both to `tspgClient<Database>({ keys })`. Regenerate after a migration.
- *
- * ```ts ignore
- * import { generate } from "@tspg/tanstack-db-postgrest/generate";
- * import { nodePostgresAdapter } from "@tspg/introspect/adapters/node-postgres";
- * writeFileSync("src/db.ts", await generate({ db: nodePostgresAdapter(pool), schemas: ["api"] }));
- * ```
  *
  * A composite-type column is typed `unknown`: the client takes what the API sends.
  */

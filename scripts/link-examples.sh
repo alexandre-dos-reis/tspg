@@ -80,6 +80,19 @@ for name in "${names[@]}"; do
     [ -f "$link/dist/index.js" ] || { echo "FAIL $name: $link has no dist/index.js -- run 'bun run build'" >&2; exit 1; }
     (cd "$dir" && node -e "import(\"$pkg\")" 2>/dev/null) ||
       { echo "FAIL $name: $pkg is linked but does not resolve" >&2; exit 1; }
+    # what npm would have put in node_modules/.bin for the package's `bin`
+    node -e '
+      const fs = require("node:fs"), path = require("node:path");
+      const [dir, pkg] = process.argv.slice(1);
+      const { bin } = JSON.parse(fs.readFileSync(path.join(dir, "node_modules", pkg, "package.json"), "utf8"));
+      for (const [cmd, file] of Object.entries(bin ?? {})) {
+        const link = path.join(dir, "node_modules", ".bin", cmd);
+        fs.mkdirSync(path.dirname(link), { recursive: true });
+        fs.rmSync(link, { force: true });
+        fs.symlinkSync(path.relative(path.dirname(link), path.join(dir, "node_modules", pkg, file)), link);
+        fs.chmodSync(path.join(dir, "node_modules", pkg, file), 0o755);
+      }
+    ' "$dir" "$pkg"
     echo "linked   $name: $pkg (copy of packages/${pkg#@tspg/})"
   done
 done

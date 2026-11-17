@@ -17,6 +17,9 @@
     "url": "git+https://github.com/alexandre-dos-reis/tspg.git",
     "directory": "packages/tanstack-db-postgrest"
   },
+  "bin": {
+    "tspg-db": "./dist/bin.js"
+  },
   "files": [
     "dist"
   ],
@@ -24,7 +27,6 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./generate": "./dist/generate.js",
     "./package.json": "./package.json"
   },
   "scripts": {
