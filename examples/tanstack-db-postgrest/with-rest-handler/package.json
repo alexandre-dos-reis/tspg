@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "gen:types": "tspg-db generate --pglite memory:// --sql schema.sql --schemas api --out db.generated.ts",
+    "gen:types": "node init-db.ts && tspg-db generate --pglite .pglite --schemas api --out db.generated.ts",
     "start": "node main.ts",
     "typecheck": "tsc --noEmit"
   },
