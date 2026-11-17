@@ -30,8 +30,9 @@ test("the Database type: row, insert and update shapes, key and writability", ()
   expect(out).toContain("export type Database = {");
   expect(out).toContain('default: "api";');
   expect(out).toContain("row: { id: number; title: string; done: boolean | null; note: string | null };");
-  // the identity column, the defaulted one and the nullable one may be left out of an insert
-  expect(out).toContain("insert: { id?: number; title: string; done?: boolean | null; note?: string | null };");
+  // the defaulted column and the nullable one may be left out of an insert; the primary key, even an identity
+  // one, may not: the client keeps rows by key, and supplies the optimistic row's
+  expect(out).toContain("insert: { id: number; title: string; done?: boolean | null; note?: string | null };");
   expect(out).toContain('pk: ["order_id", "product_id"];');
   expect(out).toContain("pk: [];\n        insertable: false;"); // a view
 });

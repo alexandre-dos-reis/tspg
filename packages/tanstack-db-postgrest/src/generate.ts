@@ -22,8 +22,12 @@ const isCache = (s: GenerateSource): s is SchemaCache => "relations" in s;
 const shape = (rel: Relation, rows: "row" | "insert" | "update"): string => {
   const fields = rel.columns.map((c) => {
     const t = `${columnType(c)}${c.nullable ? " | null" : ""}`;
-    // on the way in a column the database fills (default, identity, generated) or accepts NULL for may be left out
-    const optional = rows === "update" || (rows === "insert" && (c.hasDefault || c.generated || c.nullable));
+    // On the way in, a column the database fills (default, identity, generated) or accepts NULL for may be left
+    // out -- except the primary key: a client that keeps rows by key needs one at once (the optimistic row's),
+    // so it always supplies it, and `omitOnInsert` keeps it out of the request when the database makes its own.
+    const optional =
+      rows === "update" ||
+      (rows === "insert" && !rel.pk.includes(c.name) && (c.hasDefault || c.generated || c.nullable));
     return `${tsKey(c.name)}${optional ? "?" : ""}: ${t}`;
   });
   return `{ ${fields.join("; ")} }`;
