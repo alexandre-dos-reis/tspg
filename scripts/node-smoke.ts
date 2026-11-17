@@ -6,6 +6,9 @@ import { readFileSync } from "node:fs";
 import pg from "pg";
 import { createRest } from "../packages/rest/dist/index.js";
 import { createQuery } from "../packages/query/dist/index.js";
+import { nodePostgresAdapter as introspectAdapter } from "../packages/introspect/dist/adapters/node-postgres.js";
+import { generate } from "../packages/tanstack-db-postgrest/dist/generate.js";
+import { buildQuery, compositeKey, tspgClient } from "../packages/tanstack-db-postgrest/dist/index.js";
 import { nodePostgresAdapter } from "../packages/rest/dist/adapters/node-postgres.js";
 
 const admin = process.env["TEST_DATABASE_URL"];
@@ -105,6 +108,16 @@ try {
   assert.match(generated, /export type Db = \{/);
   assert.match(generated, /name: string;/);
   assert.match(generated, /export const schema: SchemaDescriptor = /);
+
+  // tanstack-db-postgrest, built: the generator reads the catalog through @tspg/introspect (no @tspg/core at run
+  // time), and the client module loads on its own
+  const module = await generate({ db: introspectAdapter(pool as never), schemas: ["api"] });
+  assert.match(module, /export type Database = \{/);
+  assert.match(module, /export const keys = \{/);
+  assert.match(module, /export const collections = /);
+  assert.equal(typeof tspgClient, "function");
+  assert.equal(compositeKey(["a", "b"], { a: 12, b: 3 }), "12_3");
+  assert.match(String(buildQuery(undefined, { select: "id" } as never)), /select=id/);
 
   // RPC + OpenAPI
   assert.equal((await call("/rpc/add?a=40&b=2")).body, 42);
