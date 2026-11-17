@@ -28,13 +28,11 @@ The module holds:
 - a `Database` type: each table's `row` and `insert` shapes, primary key, and whether it can be written;
 - `keys`: each table's primary key columns and the code that builds a row's key — the value for one column, a
   composite key's values joined with `_` (`12_3`);
-- `collections(env)`: one TanStack DB descriptor per table, for [SSR](#ssr).
 
 The generator runs on Node, at build time, and is the only part that touches the database; it is built on
-[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module itself only imports this
-package, `@tanstack/db` and `@tanstack/query-core`: nothing of the database reaches the bundle. Regenerate it after a
-migration. `name`, `keysName`, `collectionsName` and `header` are options, and `withoutCollections: true` writes the type
-and the keys alone, with no import. A composite-type column is typed `unknown`, and relationships are not in it: joins
+[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module imports nothing and holds
+no schema: only types and keys reach the bundle. Regenerate it after a
+migration. `name`, `keysName` and `header` are options. A composite-type column is typed `unknown`, and relationships are not in it: joins
 are the live queries'.
 
 ### What `insert` takes
@@ -82,22 +80,29 @@ The compiler checks what the types know:
 
 ## SSR
 
-TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) is built in, in the way its guide shows it. The
-generated `collections(env)` makes the descriptors (`collectionOptions(id, factory)`): one per table with a primary key,
-with a stable id that carries the schema (`"api.todos"`). A view has no key to generate: use `tspgClient` for it. The
-query client comes from the `DbClient` (`new DbClient({ queryClient })`), as in the guide; what differs between the
-server and the browser is `env`: the URL, a `fetch`, headers.
+TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) works as its guide shows it: a descriptor is
+`collectionOptions(id, factory)`, and the factory takes the query client from the `DbClient`
+(`new DbClient({ queryClient })`). Build the client inside the factory with `tspgClient` and the generated `keys`; the id
+carries every dynamic parameter. What differs between the server and the browser (the URL, a `fetch`, headers) is yours.
 
 ```ts ignore
-import { QueryClient } from "@tanstack/query-core";
-import { DbClient } from "@tanstack/db";
-import { collections } from "./db"; // the generated module
+import type { QueryClient } from "@tanstack/query-core";
+import { collectionOptions, DbClient } from "@tanstack/db";
+import { tspgClient } from "@tspg/tanstack-db-postgrest";
+import { keys, type Database } from "./db"; // the generated module
+
+export const todos = (env: { url: string; fetch?: typeof fetch }) =>
+  collectionOptions("api.todos", (client) =>
+    tspgClient<Database>({
+      ...env,
+      queryClient: client.requireDependency<QueryClient>("queryClient"),
+      keys,
+    }).collectionOptions("todos"),
+  );
 
 // browser
-const queryClient = new QueryClient();
-const dbClient = new DbClient({ queryClient });
-const { api } = collections({ url: "/api" });
-const todos = dbClient.collection(api.todos);
+const dbClient = new DbClient({ queryClient: new QueryClient() });
+const collection = dbClient.collection(todos({ url: "/api" }));
 ```
 
 On the server, make a `QueryClient` and a `DbClient` per request, preload, and `dehydrate()` the `DbClient`; the browser

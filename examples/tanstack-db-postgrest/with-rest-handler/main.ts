@@ -4,10 +4,12 @@
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { QueryClient } from "@tanstack/query-core";
-import { createLiveQueryCollection, DbClient, eq } from "@tanstack/db";
+import { createCollection, createLiveQueryCollection, eq } from "@tanstack/db";
 import { createRest } from "@tspg/rest";
 import { pgliteAdapter } from "@tspg/rest/adapters/pglite";
-import { collections } from "./db.generated.ts";
+import { tspgClient } from "@tspg/tanstack-db-postgrest";
+import type { Database } from "./db.generated.ts";
+import { keys } from "./db.generated.ts";
 
 const pglite = new PGlite();
 await pglite.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -22,20 +24,16 @@ const pgRest = await createRest({
   },
 });
 
-// db.generated.ts holds `collections(env)`: one TanStack DB descriptor per table. `env` is what differs between the
-// server and the browser -- the URL, a `fetch`, headers: here `inProcess` hands each request straight to
-// `pgRest.handle`, so there is no network (in a browser: `collections({ url: "/api" })`). The query client comes from
-// the `DbClient`, as in TanStack DB's SSR guide. The `DbClient` is the unit of SSR: a server makes one per request and
-// `dehydrate()`s it, the browser `hydrate()`s its own.
+// `tspgClient` takes the generated `keys` (the primary keys, so none is written by hand) and the `Database` type.
+// `url` is the API; `fetch` is what differs between the server and the browser: here `inProcess` hands each
+// request straight to `pgRest.handle`, so there is no network (in a browser: `url: "/api"`, no `fetch`).
 const inProcess = ((url: string, init?: RequestInit) => pgRest.handle(new Request(new URL(url, "http://app").toString(), init))) as typeof fetch;
 
-const queryClient = new QueryClient();
-const db = new DbClient({ queryClient });
-const { api } = collections({ url: "/", fetch: inProcess, headers: { "X-User": "alice" } });
+const tspg = tspgClient<Database>({ url: "/", queryClient: new QueryClient(), keys, fetch: inProcess, headers: { "X-User": "alice" } });
 
 // `eager` (the default) loads the table once. `syncMode: "on-demand"` would load only what a live query asks
 // for, its filters sent to the API.
-const todos = db.collection(api.todos);
+const todos = createCollection(tspg.collectionOptions("todos"));
 await todos.preload();
 
 // A live query: TanStack DB keeps it up to date as the collection changes.

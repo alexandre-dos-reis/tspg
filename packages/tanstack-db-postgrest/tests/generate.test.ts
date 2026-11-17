@@ -22,7 +22,7 @@ beforeAll(async () => {
     );
     CREATE VIEW api.totals AS SELECT order_id, sum(qty)::int AS total FROM api.order_items GROUP BY order_id;
   `);
-  out = await generate({ db: pgliteAdapter(pg), schemas: ["api"] }, { withoutCollections: true }); // evaluated below: no imports to resolve
+  out = await generate({ db: pgliteAdapter(pg), schemas: ["api"] }); // evaluated below: no imports to resolve
   const js = new Bun.Transpiler({ loader: "ts" }).transformSync(out);
   keys = (await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`)).keys;
 });
@@ -80,13 +80,11 @@ test("the generated key is what `compositeKey` builds", () => {
 test("a catalog already read is taken as it is, and the names and header are options", async () => {
   const mod = await generate(
     { db: pgliteAdapter(pg), schemas: ["api"] },
-    { name: "Db", keysName: "pks", header: "// mine", withoutCollections: true },
+    { name: "Db", keysName: "pks", header: "// mine" },
   );
   expect(mod).toStartWith("// mine");
   expect(mod).toContain("export type Db = {");
   expect(mod).toContain("export const pks = {");
   expect(mod).not.toContain("import ");
-  expect(
-    await generate({ db: pgliteAdapter(pg), schemas: ["api"] }, { header: false, withoutCollections: true }),
-  ).toStartWith("export type");
+  expect(await generate({ db: pgliteAdapter(pg), schemas: ["api"] }, { header: false })).toStartWith("export type");
 });
