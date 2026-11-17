@@ -16,13 +16,6 @@ export interface GenerateOptions {
   readonly header?: string | false;
   /** Name of the exported collections constant. Default `"collections"`. */
   readonly collectionsName?: string;
-  /**
-   * Leave out the SSR integration (`collections`), and with it every import: the module is then the type and
-   * the keys alone. Default `false`.
-   */
-  readonly withoutCollections?: boolean;
-  /** Where the module imports `tspgClient` from. Default `"@tspg/tanstack-db-postgrest"`. */
-  readonly clientModule?: string;
 }
 
 const read = (c: string): string => `row${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(c) ? `.${c}` : `[${JSON.stringify(c)}]`}`;
@@ -118,8 +111,6 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   type.push("  };", "};");
   keys.push("  },", "} as const;");
   const body = `${type.join("\n")}\n\n${keys.join("\n")}\n`;
-  if (options.withoutCollections) return `${header}${body}`;
-
   // The SSR integration, as TanStack DB documents it: a descriptor is `collectionOptions(id, factory)`, one id for
   // each table (the schema in it), and its factory takes the query client from the `DbClient` that materializes it
   // (`client.requireDependency("queryClient")`, `new DbClient({ queryClient })`). What differs between the server
@@ -127,7 +118,7 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   // argument of `collections(...)`: the descriptors are made where that is known, one set per request on a server.
   const envName = `${name}Env`;
   const collectionsName = options.collectionsName ?? "collections";
-  const from = JSON.stringify(options.clientModule ?? "@tspg/tanstack-db-postgrest");
+  const from = JSON.stringify("@tspg/tanstack-db-postgrest");
   const bySchema = new Map<string, string[]>();
   for (const { schema, table } of collected) {
     const client = schema === schemas[0] ? "tspg(client)" : `tspg(client).schema(${JSON.stringify(schema)})`;
