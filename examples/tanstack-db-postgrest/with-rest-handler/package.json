@@ -1,0 +1,23 @@
+{
+  "name": "tspg-example-tanstack-db-postgrest",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen:types": "node gen-types.ts",
+    "start": "node main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": ">=0.2.0",
+    "@tanstack/db": "1.0.0-rc.1.5",
+    "@tanstack/query-core": "^5.90.15",
+    "@tanstack/query-db-collection": "^1.5.2",
+    "@tspg/introspect": "^0.0.0",
+    "@tspg/rest": "^0.2.0",
+    "@tspg/tanstack-db-postgrest": "^0.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
