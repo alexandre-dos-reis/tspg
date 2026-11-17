@@ -25,7 +25,6 @@
   "exports": {
     ".": "./dist/index.js",
     "./generate": "./dist/generate.js",
-    "./rest": "./dist/rest.js",
     "./package.json": "./package.json"
   },
   "scripts": {

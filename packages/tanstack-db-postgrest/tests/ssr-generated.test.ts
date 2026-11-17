@@ -6,12 +6,11 @@ import { DbClient } from "@tanstack/db";
 import { createRest, type RestInstance } from "../../rest/src/index";
 import { pgliteAdapter } from "../../adapters/src/pglite";
 import { generate } from "../src/generate";
-import { restFetch } from "../src/rest";
 
 /**
  * The module `generate()` writes holds the SSR integration: one descriptor per table, materialized by each
  * `DbClient`, and what differs between the server and the browser comes in with the client. This writes the
- * module, imports it, and runs the whole path: a server client reads through `restFetch` (no network), its state
+ * module, imports it, and runs the whole path: a server client reads through `handle` (no network), its state
  * is dehydrated, and a browser client hydrates it without requesting anything.
  */
 const file = new URL("./zz-generated-ssr.ts", import.meta.url);
@@ -63,8 +62,12 @@ test("a descriptor for each table with a primary key, the schema in the id", () 
   expect(collections.v2.things.id).toBe("v2.things");
 });
 
-test("server: reads through restFetch, no network; the browser hydrates what was dehydrated", async () => {
-  const onServer = mod.collections({ url: "/", fetch: restFetch(rest, new Request("http://app/")) });
+test("server: reads through handle, no network; the browser hydrates what was dehydrated", async () => {
+  const onServer = mod.collections({
+    url: "/",
+    fetch: ((url: string, init?: RequestInit) =>
+      rest.handle(new Request(new URL(url, "http://app").toString(), init))) as typeof fetch,
+  });
   const server = new DbClient({ queryClient: new QueryClient() });
   await server.collection(onServer.api.notes).preload();
   await server.collection(onServer.api.lines).preload();

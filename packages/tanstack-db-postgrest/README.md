@@ -105,31 +105,6 @@ On the server, make a `QueryClient` and a `DbClient` per request, preload, and `
 queries that were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional, and TanStack DB's own limits
 apply (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
 
-### If you use `@tspg/rest`: no request to yourself
-
-When the same server runs the API with [`@tspg/rest`](../rest/README.md) (or anything with a
-`handle(Request): Promise<Response>`), `@tspg/tanstack-db-postgrest/rest` saves SSR a request to itself. `restFetch` is a `fetch` that calls it directly: in process, no network, no
-second server. Give it the incoming request and the API sees the same caller (`cookie` and `authorization` are carried
-over, which is what `resolveContext` reads); without it the calls are anonymous.
-
-```ts ignore
-import { QueryClient } from "@tanstack/query-core";
-import { DbClient } from "@tanstack/db";
-import { restFetch } from "@tspg/tanstack-db-postgrest/rest";
-import { collections } from "./db";
-import { pgRest } from "./rest.server"; // createRest(...): created once per process
-
-export async function loader(request: Request) {
-  const dbClient = new DbClient({ queryClient: new QueryClient() });
-  const { api } = collections({ url: "/api", fetch: restFetch(pgRest, request) });
-  await dbClient.collection(api.todos).preload();
-  return dbClient.dehydrate();
-}
-```
-
-This is server-only code: it holds `pgRest`, so keep it in a module the browser never imports. The generated module and
-the rest of your code stay the same on both sides, which is what makes the code isomorphic: only `env` is different. The package does not depend on `@tspg/rest`; `restFetch` only needs `handle`.
-
 ## Sync modes
 
 The package is built on TanStack DB's Query collection (`@tanstack/query-db-collection`), so it offers the modes

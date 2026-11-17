@@ -1,4 +1,4 @@
-// Step 2: use it. The API runs in this process (PGlite + @tspg/rest), so the example needs no server: `restFetch`
+// Step 2: use it. The API runs in this process (PGlite + @tspg/rest), so the example needs no server: `inProcess`
 // hands each request straight to `pgRest.handle`. Against a real PostgREST API, drop `fetch` and give `url` its address.
 //   node main.ts
 import { readFileSync } from "node:fs";
@@ -7,7 +7,6 @@ import { QueryClient } from "@tanstack/query-core";
 import { createLiveQueryCollection, DbClient, eq } from "@tanstack/db";
 import { createRest } from "@tspg/rest";
 import { pgliteAdapter } from "@tspg/rest/adapters/pglite";
-import { restFetch } from "@tspg/tanstack-db-postgrest/rest";
 import { collections } from "./db.generated.ts";
 
 const pglite = new PGlite();
@@ -24,13 +23,15 @@ const pgRest = await createRest({
 });
 
 // db.generated.ts holds `collections(env)`: one TanStack DB descriptor per table. `env` is what differs between the
-// server and the browser -- the URL, a `fetch`, headers: here `restFetch` hands each request straight to
+// server and the browser -- the URL, a `fetch`, headers: here `inProcess` hands each request straight to
 // `pgRest.handle`, so there is no network (in a browser: `collections({ url: "/api" })`). The query client comes from
 // the `DbClient`, as in TanStack DB's SSR guide. The `DbClient` is the unit of SSR: a server makes one per request and
 // `dehydrate()`s it, the browser `hydrate()`s its own.
+const inProcess = ((url: string, init?: RequestInit) => pgRest.handle(new Request(new URL(url, "http://app").toString(), init))) as typeof fetch;
+
 const queryClient = new QueryClient();
 const db = new DbClient({ queryClient });
-const { api } = collections({ url: "/", fetch: restFetch(pgRest), headers: { "X-User": "alice" } });
+const { api } = collections({ url: "/", fetch: inProcess, headers: { "X-User": "alice" } });
 
 // `eager` (the default) loads the table once. `syncMode: "on-demand"` would load only what a live query asks
 // for, its filters sent to the API.
