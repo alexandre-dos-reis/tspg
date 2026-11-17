@@ -62,15 +62,27 @@ const things = createCollection(tspg.schema("v2").collectionOptions("things")); 
 The compiler checks what the types know:
 
 - the table is one that exists, in the schema chosen (`schema("v2")` for the others), and the row is its `row`;
-- `keys` has to match the `Database`: a table's key columns are the ones its type says;
-- the primary key is never given: `keys` holds each table's key columns and the code that builds a row's key, and the
-  compiler checks that `keys` matches the `Database`;
+- the primary key is never given: `keys` holds each table's key columns and the code that builds a row's key, and has
+  to match the `Database` (a table's key columns are the ones its type says);
 - a relation that cannot take every write (a view) needs `readOnly: true`, and a view, which has no primary key to
   generate, names the columns that identify a row (`keyColumns`);
 - `omitOnInsert` and `filters` take column names.
 
-Without a generated module, `tspgCollectionOptions<Row>({ url, table, queryClient, key })` takes the row type and the
-key by hand: `key: { pk: ["order_id", "line"], key: (row) => \`${row.order_id}_${row.line}\` }`.
+Without a generated module, `tspgCollectionOptions<Row>` takes the row type and the key by hand, as `key`: the primary
+key columns, which the writes filter on, and the function that builds the collection key.
+
+```ts
+import { tspgCollectionOptions } from "@tspg/tanstack-db-query";
+
+type Line = { order_id: number; line: number; qty: number };
+
+const lines = tspgCollectionOptions<Line>({
+  url: "/api",
+  table: "lines",
+  queryClient,
+  key: { pk: ["order_id", "line"], key: (row) => `${row.order_id}_${row.line}` },
+});
+```
 
 ## SSR
 
@@ -80,13 +92,14 @@ TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) (`DbClient`,
 import { QueryClient } from "@tanstack/query-core";
 import { collectionOptions } from "@tanstack/db";
 import { tspgCollectionOptions } from "@tspg/tanstack-db-query";
+import { keys } from "./db";
 
 export const todos = collectionOptions("todos", () =>
   tspgCollectionOptions<Todo>({
     url: process.env.API_URL!, // absolute on the server: there is no page to resolve `/api` against
     table: "todos",
     queryClient: new QueryClient(), // inside the factory: one per `DbClient`, so one per request
-    key: { pk: ["id"], key: (row: Todo) => row.id }, // or the `keys` of `generate()`, through `tspgClient`
+    key: keys.schemas.api.todos, // the entry `generate()` wrote for the table
   }),
 );
 ```
