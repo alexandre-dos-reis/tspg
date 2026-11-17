@@ -22,7 +22,11 @@ function setup() {
       DB.push(...body);
       return new Response(JSON.stringify(body), { status: 201 });
     }
-    if (init.method === "PATCH") return new Response("[]", { status: 200 });
+    if (init.method === "PATCH") {
+      // the server answers with the row as it is now (`Prefer: return=representation`)
+      const id = Number(/id=eq\.(\d+)/.exec(decodeURIComponent(url))![1]);
+      return new Response(JSON.stringify([{ ...DB.find((r) => r.id === id), ...body }]), { status: 200 });
+    }
     if (init.method === "DELETE") return new Response(null, { status: 204 });
     return new Response(JSON.stringify(DB), { status: 200 });
   }) as unknown as typeof fetch;
@@ -71,7 +75,7 @@ test("or / not / in", async () => {
   expect(url).toMatch(/or=\(id\.in\.\(1,3\),or\(title\.not\.eq\."x,y",title\.is\.null\)\)/);
 });
 
-test("insert -> POST then refetch; update -> PATCH by pk; delete -> DELETE by pk", async () => {
+test("insert -> POST; update -> PATCH by pk; delete -> DELETE by pk; the returned row is written, nothing is refetched", async () => {
   const { todos, calls } = setup();
   // On-demand: rows are only loaded once a live query asks for them.
   await createLiveQueryCollection((q) => q.from({ t: todos })).preload();
@@ -90,6 +94,37 @@ test("insert -> POST then refetch; update -> PATCH by pk; delete -> DELETE by pk
   const del = todos.delete(2);
   await del.when("settled");
   expect(calls.find((c) => c.method === "DELETE")!.url).toMatch(/todos\?id=eq\.2$/);
+  expect(todos.has(2)).toBe(false);
+  expect(todos.get(1)?.done).toBe(true);
+  expect(todos.get(9)?.title).toBe("n");
+  // one GET to load, none after the writes
+  expect(calls.filter((c) => c.method === "GET")).toHaveLength(1);
+});
+
+test("a write that does not return its row fails and is rolled back", async () => {
+  const { todos } = setup();
+  await createLiveQueryCollection((q) => q.from({ t: todos })).preload();
+  const empty = createCollection(
+    tspgCollectionOptions<Todo>({
+      url: "http://x/api",
+      table: "todos",
+      key: byId,
+      queryClient: new QueryClient(),
+      syncMode: "eager",
+      fetch: (async (_u: string, init: RequestInit = {}) =>
+        new Response(init.method === "GET" || !init.method ? JSON.stringify(DB) : "[]", {
+          status: 200,
+        })) as unknown as typeof fetch,
+    }),
+  );
+  await empty.preload();
+  const tx = empty.update(1, (d) => {
+    d.done = true;
+  });
+  await tx.when("settled").catch(() => {});
+  expect(tx.state).toBe("failed");
+  expect(tx.error?.error.message).toMatch(/expected 1 row/);
+  expect(empty.get(1)?.done).toBe(false);
 });
 
 test("an operator the server cannot run still gives correct results (local refilter)", async () => {

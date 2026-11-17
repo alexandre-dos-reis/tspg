@@ -48,7 +48,7 @@ are the live queries'.
   optimistic row needs one at once. For a key the database makes up (an identity, a sequence) it is a placeholder, and
   the client keeps it out of the request (`keys` lists those columns as `generated`). A key the client can make (a
   `uuid`) is sent as given.
-- An optimistic row holds only what was inserted until the refetch brings the database's own columns, so a live query
+- An optimistic row holds only what was inserted until the server's row comes back (it replaces the optimistic one, no refetch) with the database's own columns, so a live query
   that filters on a defaulted column does not see the row until then: give that column in the insert.
 
 ## 2. Use it
@@ -139,7 +139,9 @@ When any part of `where` is dropped, or `orderBy` is an expression, a custom com
 paginates locally. String order otherwise follows your database collation.
 
 Writes: `insert` → `POST` (array body, what the insert gives and nothing more), `update` → `PATCH ?pk=eq.x` (changed columns only),
-`delete` → `DELETE ?pk=eq.x`, then a refetch (`afterWrite: "direct"` writes the returned representation instead).
+`delete` → `DELETE ?pk=eq.x`. `POST` and `PATCH` send `Prefer: return=representation` and the collection writes the row the
+server returned straight into its store: there is no refetch. A write that does not return its row (a `PATCH` matching nothing, a
+row hidden by a policy) fails with a `TspgError` (`TSPG_NO_ROW`) and the optimistic change is rolled back.
 Errors surface as `TspgError` (`status`, `code`, `message`, `details`, `hint`).
 
 Relations are not mapped: join collections with TanStack DB live queries instead of PostgREST embeds.

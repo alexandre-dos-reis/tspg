@@ -77,12 +77,6 @@ export interface TspgCollectionConfig<Row extends object = object> extends Build
   syncMode?: "eager" | "on-demand";
   /** Make the collection read-only. */
   readOnly?: boolean;
-  /**
-   * After a write: `"refetch"` (default) re-reads from the server, `"direct"`
-   * writes the representation the server returned (saves a round trip, but
-   * needs the row to still match the collection's active subsets).
-   */
-  afterWrite?: "refetch" | "direct";
   /** Forwarded to TanStack Query / the collection. */
   staleTime?: number;
   gcTime?: number;
@@ -109,7 +103,7 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
     method: string,
     qs: string,
     opts: { body?: unknown; prefer?: string; signal?: AbortSignal } = {},
-  ): Promise<unknown> {
+  ): Promise<{ status: number; data: unknown }> {
     const extra = typeof config.headers === "function" ? await config.headers() : (config.headers ?? {});
     const headers: HeadersInit_ = { Accept: "application/json", ...extra };
     if (config.schema) headers[method === "GET" ? "Accept-Profile" : "Content-Profile"] = config.schema;
@@ -126,10 +120,30 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
       throw new TspgError(res.status, e.code ?? undefined, e.message ?? res.statusText, e.details, e.hint);
     }
     const text = await res.text();
-    return text ? JSON.parse(text) : undefined;
+    return { status: res.status, data: text ? JSON.parse(text) : undefined };
   }
 
-  const direct = config.afterWrite === "direct";
+  // A write asks for the row back (`Prefer: return=representation`) and the collection takes that row as it is:
+  // there is no refetch. So the row has to come back: a write that returns fewer rows than it made (a PATCH that
+  // matched nothing, a row a policy hides) is an error, and the optimistic change is rolled back.
+  const columns = config.select ? `select=${encodeURIComponent(config.select)}` : "";
+  async function write(method: "POST" | "PATCH", qs: string, body: unknown, expected: number): Promise<Row[]> {
+    const { status, data } = await request(method, [qs, columns].filter(Boolean).join("&"), {
+      body,
+      prefer: "return=representation",
+    });
+    const rows = Array.isArray(data) ? (data as Row[]) : [];
+    if (rows.length !== expected) {
+      throw new TspgError(
+        status,
+        "TSPG_NO_ROW",
+        `${method} ${config.table}: expected ${expected} row(s) back, got ${rows.length}`,
+        "the write did not return the row: it matched nothing, or the API hides it from the caller",
+      );
+    }
+    return rows;
+  }
+
   const writable = !config.readOnly;
 
   const options = queryCollectionOptions<Row>({
@@ -149,7 +163,7 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
     },
     queryFn: async (ctx) => {
       const subset = ctx.meta?.loadSubsetOptions as Parameters<typeof buildQuery>[0];
-      return (await request("GET", buildQuery(subset, config), { signal: ctx.signal })) as Row[];
+      return (await request("GET", buildQuery(subset, config), { signal: ctx.signal })).data as Row[];
     },
     getKey: config.key.key,
     ...(writable && {
@@ -158,22 +172,16 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
         const rows = transaction.mutations.map((m) =>
           Object.fromEntries(Object.entries(m.modified).filter(([k]) => !omit.has(k))),
         );
-        const out = (await request("POST", "", { body: rows, prefer: "return=representation" })) as Row[];
-        if (direct) await collection.utils.writeBatch(() => out.forEach((r) => collection.utils.writeUpsert(r)));
-        else await collection.utils.refetch();
+        const out = await write("POST", "", rows, rows.length);
+        collection.utils.writeBatch(() => out.forEach((r) => collection.utils.writeUpsert(r)));
       },
       onUpdate: async ({ transaction, collection }) => {
         const out = await Promise.all(
           transaction.mutations.map((m) =>
-            request("PATCH", keyFilter(pk, m.original as Record<string, unknown>).toString(), {
-              body: m.changes,
-              prefer: "return=representation",
-            }),
+            write("PATCH", keyFilter(pk, m.original as Record<string, unknown>).toString(), m.changes, 1),
           ),
         );
-        if (direct)
-          await collection.utils.writeBatch(() => out.flat().forEach((r) => collection.utils.writeUpsert(r as Row)));
-        else await collection.utils.refetch();
+        collection.utils.writeBatch(() => out.flat().forEach((r) => collection.utils.writeUpsert(r)));
       },
       onDelete: async ({ transaction, collection }) => {
         await Promise.all(
@@ -181,11 +189,9 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
             request("DELETE", keyFilter(pk, m.original as Record<string, unknown>).toString()),
           ),
         );
-        if (direct) {
-          await collection.utils.writeBatch(() =>
-            transaction.mutations.forEach((m) => collection.utils.writeDelete(m.key as string | number)),
-          );
-        } else await collection.utils.refetch();
+        collection.utils.writeBatch(() =>
+          transaction.mutations.forEach((m) => collection.utils.writeDelete(m.key as string | number)),
+        );
       },
     }),
   } as QueryCollectionConfig<Row>);

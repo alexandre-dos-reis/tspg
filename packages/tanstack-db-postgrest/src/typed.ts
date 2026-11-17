@@ -44,7 +44,6 @@ export type TspgTableOptions<R extends RelationShape> = KeyOption<R> &
   WriteOption<R> & {
     select?: string;
     filters?: Partial<Record<keyof R["row"] & string, string>>;
-    afterWrite?: "refetch" | "direct";
     staleTime?: number;
     gcTime?: number;
     refetchInterval?: number;

@@ -61,7 +61,9 @@ const tspg = tspgClient<Database>({
       headers: init?.headers as Record<string, string>,
     });
     if (init?.method === "POST") posts.push(JSON.parse(init.body as string));
-    if (init?.method === "PATCH" || init?.method === "POST") return new Response("[]");
+    // a write answers with the row (the database made `id` up)
+    if (init?.method === "POST") return new Response(JSON.stringify([{ id: 100, client_id: 7, total: null }]));
+    if (init?.method === "PATCH") return new Response(JSON.stringify([{ order_id: 12, product_id: 3, qty: 5 }]));
     return new Response(
       url.includes("/order_items") ? JSON.stringify([{ order_id: 12, product_id: 3, qty: 1 }]) : "[]",
     );
