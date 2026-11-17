@@ -13,6 +13,15 @@ export interface GenerateOptions {
   readonly keysName?: string;
   /** Banner comment. `false` leaves it out. */
   readonly header?: string | false;
+  /** Name of the exported collections constant. Default `"collections"`. */
+  readonly collectionsName?: string;
+  /**
+   * Leave out the SSR integration (`collections`), and with it every import: the module is then the type and
+   * the keys alone. Default `false`.
+   */
+  readonly withoutCollections?: boolean;
+  /** Where the module imports `tspgClient` from. Default `"@tspg/tanstack-db-postgrest"`. */
+  readonly clientModule?: string;
 }
 
 const read = (c: string): string => `row${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(c) ? `.${c}` : `[${JSON.stringify(c)}]`}`;
@@ -64,6 +73,7 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   const first = JSON.stringify(schemas[0] ?? "");
 
   const type: string[] = [`export type ${name} = {`, `  default: ${first};`, "  schemas: {"];
+  const collected: { schema: string; table: string }[] = [];
   const keys: string[] = [`export const ${keysName} = {`, `  default: ${first},`, "  schemas: {"];
   for (const schema of schemas) {
     type.push(`    ${tsKey(schema)}: {`);
@@ -98,6 +108,7 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
           : /^(number|string)$/.test(typeOf(only))
             ? read(only)
             : `String(${read(only)})`;
+      collected.push({ schema, table: rel.name });
       keys.push(
         `      ${tsKey(rel.name)}: {`,
         `        pk: [${rel.pk.map((c) => JSON.stringify(c)).join(", ")}],`,
@@ -111,5 +122,45 @@ export const generate = async (source: GenerateSource, options: GenerateOptions 
   }
   type.push("  };", "};");
   keys.push("  },", "} as const;");
-  return `${header}${type.join("\n")}\n\n${keys.join("\n")}\n`;
+  const body = `${type.join("\n")}\n\n${keys.join("\n")}\n`;
+  if (options.withoutCollections) return `${header}${body}`;
+
+  // The SSR integration. A descriptor is `collectionOptions(id, factory)`: a module-level value, one id for
+  // each table (the schema in it), materialized by each `DbClient`. What differs between the server and the
+  // browser -- the URL, a `fetch` that calls the API in process, the identity of the request -- is not in the
+  // descriptor but in the `DbClient`, which is given it as `tspg`: `new DbClient({ tspg: { url, fetch } })`.
+  const envName = `${name}Env`;
+  const collectionsName = options.collectionsName ?? "collections";
+  const from = JSON.stringify(options.clientModule ?? "@tspg/tanstack-db-postgrest");
+  const bySchema = new Map<string, string[]>();
+  for (const { schema, table } of collected) {
+    const client = schema === schemas[0] ? "client(db)" : `client(db).schema(${JSON.stringify(schema)})`;
+    bySchema.set(schema, [
+      ...(bySchema.get(schema) ?? []),
+      `${tsKey(table)}: collectionOptions(${JSON.stringify(`${schema}.${table}`)}, (db) => ${client}.collectionOptions(${JSON.stringify(table)})),`,
+    ]);
+  }
+  const collections = [
+    `export const ${collectionsName} = {`,
+    ...schemas.flatMap((schema) => [
+      `  ${tsKey(schema)}: {`,
+      ...(bySchema.get(schema) ?? []).map((l) => `    ${l}`),
+      "  },",
+    ]),
+    "} as const;",
+  ];
+  const head = [
+    'import { QueryClient } from "@tanstack/query-core";',
+    'import { collectionOptions } from "@tanstack/db";',
+    'import type { DbClient } from "@tanstack/db";',
+    `import { tspgClient } from ${from};`,
+    `import type { TspgClientConfig } from ${from};`,
+  ].join("\n");
+  const env = `/** What a \`DbClient\` is given as \`tspg\`: where the API is, and how to reach it. Server and browser differ here. */
+export type ${envName} = Omit<TspgClientConfig, "queryClient" | "keys">;
+
+// A client per \`DbClient\`, so one per request on the server: its query client is its own.
+const client = (db: DbClient) =>
+  tspgClient<${name}>({ ...db.requireDependency<${envName}>("tspg"), queryClient: new QueryClient(), keys: ${keysName} });`;
+  return `${header}${head}\n\n${body}\n${env}\n\n/** One descriptor per table that has a primary key (a view names its key columns: use \`tspgClient\`). */\n${collections.join("\n")}\n`;
 };

@@ -27,12 +27,17 @@ export const todos = createCollection(tspg.collectionOptions("todos")); // the r
 
 ## Types and keys from the database
 
-`@tspg/tanstack-db-postgrest/generate` reads the catalog and writes one module with nothing but what a client needs: a
-`Database` type (each table's `row` and `insert` shapes, primary key, and whether it can be written) and
-`keys`, which holds each table's primary key columns and the code that builds a row's key — the value for one column,
-a composite key's values joined with `_` (`12_3`). It has no imports of its own: the type is erased from the bundle
-and `keys` is a few functions. The generator runs on Node, at build time, and is the only part that touches the
-database; it is built on [`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package.
+`@tspg/tanstack-db-postgrest/generate` reads the catalog and writes one module with everything a client needs from the
+database:
+
+- a `Database` type: each table's `row` and `insert` shapes, primary key, and whether it can be written;
+- `keys`: each table's primary key columns and the code that builds a row's key — the value for one column, a
+  composite key's values joined with `_` (`12_3`);
+- `collections`: one TanStack DB descriptor per table, ready for SSR (below).
+
+The generator runs on Node, at build time, and is the only part that touches the database; it is built on
+[`@tspg/introspect`](../introspect/README.md), so it needs no other `@tspg` package. The module itself only imports
+this package, `@tanstack/db` and `@tanstack/query-core`: nothing of the database reaches the bundle.
 
 ```ts ignore
 import { writeFileSync } from "node:fs";
@@ -54,7 +59,8 @@ and the client keeps it out of the request (`keys` lists those columns as `gener
 (a `uuid`) is sent as given. An optimistic row holds only what was inserted until the refetch brings the database's
 own columns, so a live query that filters on a defaulted column does not see the row until then: give that column in
 the insert.
-Regenerate it after a migration. `name`, `keysName` and `header` are options; a composite-type column is typed
+Regenerate it after a migration. `name`, `keysName`, `collectionsName` and `header` are options, and
+`withoutCollections: true` writes the type and the keys alone, with no import; a composite-type column is typed
 `unknown`. Relationships are not in it: joins are the live queries'.
 
 ```ts
@@ -80,28 +86,50 @@ The compiler checks what the types know:
 
 ## SSR
 
-TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) (`DbClient`, `dehydrate()` / `hydrate()`) works with these collections: wrap the options in `collectionOptions(id, factory)`, and the server preloads while the browser hydrates the rows.
+TanStack DB's [SSR](https://tanstack.com/db/latest/docs/guides/ssr) is built in: the generated `collections` are
+descriptors (`collectionOptions(id, factory)`), one per table with a primary key, with a stable id that carries the
+schema (`"api.todos"`). A view has no key to generate: use `tspgClient` for it.
+
+What differs between the server and the browser is given to the `DbClient`, as `tspg`: the URL, a `fetch`, headers.
+The server makes a `DbClient` per request, preloads, and `dehydrate()`s it; the browser makes its own and
+`hydrate()`s the state.
 
 ```ts ignore
-import { QueryClient } from "@tanstack/query-core";
-import { collectionOptions } from "@tanstack/db";
-import { tspgClient } from "@tspg/tanstack-db-postgrest";
-import { type Database, keys } from "./db";
+import { DbClient } from "@tanstack/db";
+import { collections } from "./db"; // the generated module
 
-export const todos = collectionOptions("todos", () =>
-  tspgClient<Database>({
-    url: process.env.API_URL!, // absolute on the server: there is no page to resolve `/api` against
-    queryClient: new QueryClient(), // inside the factory: one per `DbClient`, so one per request
-    keys,
-  }).collectionOptions("todos"),
-);
+// browser
+const db = new DbClient({ tspg: { url: "/api" } });
+const todos = db.collection(collections.api.todos);
 ```
 
-- Give the collection a stable `id` that carries every dynamic parameter (a schema, a tenant, a filter in `filters`).
-- Build the `QueryClient` inside the factory, and `headers` / `fetch` too when they depend on the request (a cookie, a token).
-- Both sync modes are tested: `eager` rows are dehydrated with the collection, `on-demand` ones with the live queries that were preloaded (`dbClient.preloadLiveQuery`).
-- Hydrated rows are provisional: the collection still syncs once in the browser. TanStack DB's own limits apply
-  (mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
+Both sync modes work: `eager` rows are dehydrated with the collection, `on-demand` ones with the live queries that
+were preloaded (`dbClient.preloadLiveQuery`). Hydrated rows are provisional, and TanStack DB's own limits apply
+(mutation handlers and pending mutations are not serialized; Vue, Solid and Angular have no SSR provider yet).
+
+### On the server, without a request to yourself
+
+`@tspg/tanstack-db-postgrest/rest` is for a server that runs the API itself, `@tspg/rest` or anything with a
+`handle(Request): Promise<Response>`. `restFetch` is a `fetch` that calls it directly: in process, no network, no
+second server. Give it the incoming request and the API sees the same caller (`cookie` and `authorization` are carried
+over, which is what `resolveContext` reads); without it the calls are anonymous.
+
+```ts ignore
+import { DbClient } from "@tanstack/db";
+import { restFetch } from "@tspg/tanstack-db-postgrest/rest";
+import { collections } from "./db";
+import { pgRest } from "./rest.server"; // createRest(...): created once per process
+
+export async function loader(request: Request) {
+  const db = new DbClient({ tspg: { url: "/api", fetch: restFetch(pgRest, request) } });
+  await db.collection(collections.api.todos).preload();
+  return db.dehydrate();
+}
+```
+
+This is server-only code: it holds `pgRest`, so keep it in a module the browser never imports. The generated module and
+the rest of your code stay the same on both sides, which is what makes the code isomorphic: only the `DbClient` is
+different. The package does not depend on `@tspg/rest`; `restFetch` only needs `handle`.
 
 ## Sync modes
 

@@ -20,13 +20,15 @@ bun run link:examples tanstack-db-postgrest/with-rest-handler
 
 ## What it shows
 
-- `gen-types.ts` — `generate()` reads the catalog and writes `db.generated.ts`: the `Database` type and `keys`, the
-  primary key of each table and the code that builds a row's collection key. Run it again after a migration. The
-  client takes nothing else from the database, and the module is required: the primary key is never written by hand.
-- `main.ts` — `tspgClient<Database>({ url, queryClient, keys })`, then `createCollection(tspg.collectionOptions("todos"))`.
-  The row type comes from the database; a live query reads the collection; an insert shows up at once (optimistic) and
-  is replaced by the server's row; an update sends only what changed (`PATCH /todos?id=eq.N`).
+- `gen-types.ts` — `generate()` reads the catalog and writes `db.generated.ts`: the `Database` type, `keys` (the
+  primary key of each table and the code that builds a row's collection key) and `collections`, one TanStack DB
+  descriptor per table, ready for SSR. Run it again after a migration. The primary key is never written by hand.
+- `main.ts` — a `DbClient` given the URL and a `fetch` (`restFetch`, from `@tspg/tanstack-db-postgrest/rest`, which
+  hands each request to `pgRest.handle` in process: no server, no network). `db.collection(collections.api.todos)`
+  gives a typed collection; a live query reads it; an insert shows up at once (optimistic) and is replaced by the
+  server's row; an update sends only what changed (`PATCH /todos?id=eq.N`).
 - The collection is `eager` (TanStack DB's default): it loads the table once. Pass `syncMode: "on-demand"` to load only
   what live queries ask for, their filters sent to the API.
 
-Against a real API, drop `fetch` and give `url` the address where it is mounted.
+Against a real PostgREST API, drop `fetch` and give `url` its address. On a server that renders (SSR), `dehydrate()` the
+`DbClient` and `hydrate()` it in the browser: see the package README.

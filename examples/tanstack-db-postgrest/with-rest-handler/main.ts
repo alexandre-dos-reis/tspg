@@ -1,15 +1,13 @@
-// Step 2: use it. The API runs in this process (PGlite + @tspg/rest) so the example needs no server:
-// the client's `fetch` hands each request straight to `pgRest.handle`. Against a real API, drop `fetch`
-// and give `url` the address where it is mounted.
+// Step 2: use it. The API runs in this process (PGlite + @tspg/rest), so the example needs no server: `restFetch`
+// hands each request straight to `pgRest.handle`. Against a real PostgREST API, drop `fetch` and give `url` its address.
 //   node main.ts
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
-import { QueryClient } from "@tanstack/query-core";
-import { createCollection, createLiveQueryCollection, eq } from "@tanstack/db";
+import { createLiveQueryCollection, DbClient, eq } from "@tanstack/db";
 import { createRest } from "@tspg/rest";
 import { pgliteAdapter } from "@tspg/rest/adapters/pglite";
-import { tspgClient } from "@tspg/tanstack-db-postgrest";
-import { type Database, keys } from "./db.generated.ts";
+import { restFetch } from "@tspg/tanstack-db-postgrest/rest";
+import { collections, type DatabaseEnv } from "./db.generated.ts";
 
 const pglite = new PGlite();
 await pglite.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -24,19 +22,17 @@ const pgRest = await createRest({
   },
 });
 
-// The client: typed by the generated `Database`, with the keys it generated. Nothing says what a table's
-// primary key is -- the database did.
-const tspg = tspgClient<Database>({
-  url: "http://localhost",
-  queryClient: new QueryClient(),
-  keys,
-  headers: { "X-User": "alice" },
-  fetch: ((url: string, init?: RequestInit) => pgRest.handle(new Request(url, init))) as typeof fetch,
+// db.generated.ts holds one descriptor per table (`collections.api.todos`). What differs between the server and
+// the browser is given to the `DbClient`: here `restFetch` hands each request straight to `pgRest.handle`, so
+// there is no network. In a browser, `new DbClient({ tspg: { url: "/api" } })`. The `DbClient` is the unit of SSR:
+// a server makes one per request and `dehydrate()`s it, the browser `hydrate()`s its own.
+const db = new DbClient({
+  tspg: { url: "/", fetch: restFetch(pgRest), headers: { "X-User": "alice" } } satisfies DatabaseEnv,
 });
 
 // `eager` (the default) loads the table once. `syncMode: "on-demand"` would load only what a live query asks
 // for, its filters sent to the API.
-const todos = createCollection(tspg.collectionOptions("todos"));
+const todos = db.collection(collections.api.todos);
 await todos.preload();
 
 // A live query: TanStack DB keeps it up to date as the collection changes.
