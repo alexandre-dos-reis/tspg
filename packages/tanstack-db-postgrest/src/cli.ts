@@ -25,9 +25,6 @@ What is written
   --keys-name <name>   name of the exported keys constant (default: keys)
   --collections-name <name>
                        name of the exported collections constant (default: collections)
-  --client-module <m>  where the module imports tspgClient from (default: @tspg/tanstack-db-postgrest)
-  --without-collections
-                       write the type and the keys alone, with no import
 
   -h, --help           show this help
 `;
@@ -98,8 +95,6 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
         name: { type: "string" },
         "keys-name": { type: "string" },
         "collections-name": { type: "string" },
-        "client-module": { type: "string" },
-        "without-collections": { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
     });
@@ -130,8 +125,6 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
         ...(values.name !== undefined ? { name: values.name } : {}),
         ...(values["keys-name"] !== undefined ? { keysName: values["keys-name"] } : {}),
         ...(values["collections-name"] !== undefined ? { collectionsName: values["collections-name"] } : {}),
-        ...(values["client-module"] !== undefined ? { clientModule: values["client-module"] } : {}),
-        ...(values["without-collections"] ? { withoutCollections: true } : {}),
       },
     );
     const out = values.out ?? "db.generated.ts";

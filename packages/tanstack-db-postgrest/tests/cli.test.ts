@@ -34,7 +34,7 @@ test("generate --pglite writes the module", async () => {
   expect(logs[0]).toStartWith("out/db.ts: ");
 });
 
-test("the names, the client module and --without-collections are options", async () => {
+test("the names of the exports are options", async () => {
   const code = await run(
     "generate",
     "--pglite",
@@ -54,7 +54,7 @@ test("the names, the client module and --without-collections are options", async
   expect(code).toBe(0);
   expect(logs.join("\n")).toContain("export type Db = {");
   expect(logs.join("\n")).toContain("export const pks = {");
-  expect(logs.join("\n")).not.toContain("import ");
+  expect(logs.join("\n")).toContain("export const cols = ");
 });
 
 test("mistakes are said, and exit 1", async () => {

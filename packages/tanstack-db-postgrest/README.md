@@ -34,8 +34,6 @@ migration:
 | `--schemas`                                   | `public`                          | the schemas to read, comma-separated; the first is the client's default |
 | `--out`                                       | `db.generated.ts`                 | the file to write (`-` for the standard output)                         |
 | `--name`, `--keys-name`, `--collections-name` | `Database`, `keys`, `collections` | the names of what the module exports                                    |
-| `--client-module`                             | `@tspg/tanstack-db-postgrest`     | where the module imports `tspgClient` from                              |
-| `--without-collections`                       |                                   | write the type and the keys alone, with no import                       |
 
 The module holds:
 
