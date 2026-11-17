@@ -49,7 +49,8 @@ test("the names of the exports are options", async () => {
     "Db",
     "--keys-name",
     "pks",
-    "--without-collections",
+    "--collections-name",
+    "cols",
   );
   expect(code).toBe(0);
   expect(logs.join("\n")).toContain("export type Db = {");
