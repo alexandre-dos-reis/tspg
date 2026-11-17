@@ -138,7 +138,7 @@ paginates locally. String order otherwise follows your database collation.
 
 Writes: `insert` → `POST` (array body, what the insert gives and nothing more), `update` → `PATCH ?pk=eq.x` (changed columns only),
 `delete` → `DELETE ?pk=eq.x`, then a refetch (`afterWrite: "direct"` writes the returned representation instead).
-Errors surface as `TspgRestError` (`status`, `code`, `message`, `details`, `hint`).
+Errors surface as `TspgError` (`status`, `code`, `message`, `details`, `hint`).
 
 Relations are not mapped: join collections with TanStack DB live queries instead of PostgREST embeds.
 Cursor ties are not re-fetched (only `cursor.whereFrom` is used). PostgREST-only operators (FTS, `cs`, `ov`…) have no TanStack DB counterpart.

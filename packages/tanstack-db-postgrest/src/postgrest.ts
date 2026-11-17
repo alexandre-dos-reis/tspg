@@ -278,7 +278,7 @@ export function keyFilter(pk: readonly string[], row: Record<string, unknown>): 
 }
 
 /** What a PostgREST-compatible server answers on failure: `{ code, message, details, hint }`. */
-export class TspgRestError extends Error {
+export class TspgError extends Error {
   readonly status: number;
   readonly code: string | undefined;
   readonly details: string | null | undefined;
@@ -291,7 +291,7 @@ export class TspgRestError extends Error {
     hint?: string | null,
   ) {
     super(message);
-    this.name = "TspgRestError";
+    this.name = "TspgError";
     this.status = status;
     this.code = code;
     this.details = details;

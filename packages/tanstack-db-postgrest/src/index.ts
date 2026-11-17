@@ -1,5 +1,5 @@
 export type { TspgCollectionOptions, TspgRow } from "./collection.ts";
-export { buildQuery, compositeKey, keyFilter, TspgRestError } from "./postgrest.ts";
+export { buildQuery, compositeKey, keyFilter, TspgError } from "./postgrest.ts";
 export { tspgClient } from "./typed.ts";
 export type {
   DatabaseShape,

@@ -2,7 +2,7 @@ import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import type { QueryCollectionConfig, QueryCollectionUtils } from "@tanstack/query-db-collection";
 import type { CollectionConfig } from "@tanstack/db";
 import type { QueryClient } from "@tanstack/query-core";
-import { buildQuery, keyFilter, TspgRestError } from "./postgrest.ts";
+import { buildQuery, keyFilter, TspgError } from "./postgrest.ts";
 import type { BuildQueryOptions } from "./postgrest.ts";
 import type { DatabaseShape, RelationName, SchemaName } from "./typed.ts";
 
@@ -123,7 +123,7 @@ export function tspgCollectionOptions<Row extends object, Insert extends object 
     });
     if (!res.ok) {
       const e = (await res.json().catch(() => ({}))) as Record<string, string | null>;
-      throw new TspgRestError(res.status, e.code ?? undefined, e.message ?? res.statusText, e.details, e.hint);
+      throw new TspgError(res.status, e.code ?? undefined, e.message ?? res.statusText, e.details, e.hint);
     }
     const text = await res.text();
     return text ? JSON.parse(text) : undefined;

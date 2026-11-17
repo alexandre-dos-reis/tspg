@@ -20,7 +20,7 @@ import {
 import { createRest, type RestInstance } from "../../rest/src/index";
 import { pgliteAdapter } from "../../adapters/src/pglite";
 import { tspgCollectionOptions } from "../src/collection";
-import { TspgRestError } from "../src/index";
+import { TspgError } from "../src/index";
 
 /** What `generate()` writes for a table keyed by `id`. */
 const byId = { pk: ["id"], key: (row: { id: number }) => row.id } as const;
@@ -124,7 +124,7 @@ test("insert, update and delete round-trip through PostgREST syntax", async () =
   expect((await db.query("SELECT 1 FROM api.items WHERE id = $1", [id])).rows).toHaveLength(0);
 });
 
-test("a PostgREST error becomes a TspgRestError", async () => {
+test("a PostgREST error becomes a TspgError", async () => {
   const c = createCollection(
     tspgCollectionOptions<Item>({
       url: "http://test",
@@ -141,7 +141,7 @@ test("a PostgREST error becomes a TspgRestError", async () => {
     () => undefined,
     (e: unknown) => e,
   );
-  expect(err).toBeInstanceOf(TspgRestError);
+  expect(err).toBeInstanceOf(TspgError);
   expect(err).toMatchObject({ status: 404, code: "PGRST205" });
 });
 
