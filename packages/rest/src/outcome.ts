@@ -109,8 +109,14 @@ export const buildOutcome = (
       headers["Content-Range"] = `*/${prefer.count === "exact" ? String(r.rows) : "*"}`;
     }
     const ret = plan.returning ?? "minimal";
+    // What an upsert really inserted (`SqlResult.inserted`), as PostgREST reads it: a counter that
+    // never ran counts as zero (`maybe status200` in its `Response.hs`).
+    const inserted = r.inserted ?? 0;
     if (plan.kind === "insert") {
-      status = 201;
+      // `201`, unless a merge-duplicates upsert only updated rows that already existed -- PostgREST's
+      // `isInsertIfGTZero`, which asks for the preference as well as the count: a plain insert of
+      // nothing is still `201`.
+      status = prefer.resolution === "merge-duplicates" && inserted <= 0 ? 200 : 201;
       if (ret === "pk") {
         const rows = JSON.parse(r.body || "[]") as Array<Record<string, unknown>>;
         const pk = plan.rel?.pk ?? [];
@@ -119,14 +125,18 @@ export const buildOutcome = (
           headers["Location"] = `/${encodeURIComponent(plan.rel!.name)}?${q}`;
         }
       }
+    } else if (plan.kind === "put") {
+      // A single-row upsert: `201` when it inserted the row, `200` when it replaced one. Without a
+      // representation there is nothing to say, and PostgREST answers `204` either way.
+      status = ret === "representation" ? (inserted > 0 ? 201 : 200) : 204;
     } else {
       status = ret === "representation" ? 200 : 204;
     }
   }
 
   Object.assign(headers, parseResponseHeaders(r.settings[0]));
-  // an upsert that inserted nothing answers 200, unless a function chose
-  const chosen = parseStatus(r.settings[1]) ?? (r.noneInserted ? 200 : undefined);
+  // a function that set `response.status` has the last word
+  const chosen = parseStatus(r.settings[1]);
   if (chosen !== undefined) status = chosen;
 
   return { status, headers, text };

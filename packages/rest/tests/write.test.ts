@@ -195,6 +195,38 @@ describe.skipIf(!hasDb)("writes", () => {
       expect(r.json()).toEqual([{ name: "Fresh" }]);
       expect((await t.get("/clients?id=eq.1&select=name")).json()).toEqual([{ name: "Ada" }]);
     });
+    test("through a view: a view has no system column to read", async () => {
+      // The count of really-inserted rows is what tells `201` from `200`, and it is kept in a
+      // `set_config` counter rather than read off `xmax`: a view (like a partitioned or a foreign
+      // table) has no system columns, and reading one answered `42703 column big_orders.xmax does
+      // not exist` for every upsert on the usual PostgREST arrangement -- an exposed view over a
+      // table in a schema that is not exposed.
+      const inserting = await t.post(
+        "/big_orders?on_conflict=id&select=id,total",
+        { id: 900, client_id: 1, total: 250 },
+        { ctx, headers: { Prefer: "return=representation, resolution=merge-duplicates" } },
+      );
+      expect(inserting.status).toBe(201);
+      expect(inserting.json()).toEqual([{ id: 900, total: 250 }]);
+
+      const updating = await t.post(
+        "/big_orders?on_conflict=id&select=id,total",
+        { id: 900, client_id: 1, total: 260 },
+        { ctx, headers: { Prefer: "return=representation, resolution=merge-duplicates" } },
+      );
+      expect(updating.status).toBe(200);
+      expect(updating.json()).toEqual([{ id: 900, total: 260 }]);
+    });
+    test("a payload with nothing to insert never says it inserted", async () => {
+      // No row went through the counter, so there is nothing to count: PostgREST answers `200`.
+      const empty = await t.post("/clients?on_conflict=email", [], {
+        ctx,
+        headers: { Prefer: "return=representation, resolution=merge-duplicates" },
+      });
+      expect(empty.status).toBe(200);
+      // A plain insert of the same nothing is still a creation, as in PostgREST.
+      expect((await t.post("/clients", [], { ctx, headers: REP })).status).toBe(201);
+    });
     test("merging without a conflict target on a table with no key is PGRST100", async () => {
       await t.db.adapter.query("CREATE TABLE api.nokey (a int, b int); GRANT ALL ON api.nokey TO authenticated");
       await t.api.reloadSchema();
@@ -299,8 +331,10 @@ describe.skipIf(!hasDb)("writes", () => {
 
   describe("PUT", () => {
     test("creates, then replaces, the row addressed by its primary key", async () => {
+      // `201` for the row it inserts and `200` for the one it replaces, which is what the count of
+      // really-inserted rows is for (see `countInserted` in `core/src/sql/write.ts`).
       const created = await t.put("/products?id=eq.10", { name: "Cable", price: 5 }, { ctx, headers: REP });
-      expect(created.status).toBe(200);
+      expect(created.status).toBe(201);
       expect(created.json()).toEqual([{ id: 10, name: "Cable", price: 5 }]);
       const replaced = await t.put("/products?id=eq.10", { id: 10, name: "Long cable", price: 9 }, { ctx });
       expect(replaced.status).toBe(204);

@@ -9,7 +9,7 @@ import { buildRead } from "./sql/read";
 import { type BodyType, buildRpc, isSingleUnnamedParam, resolveFunction, type RpcCall } from "./sql/rpc";
 import { buildStatement, type BodyShape } from "./sql/statement";
 import { type Values, bindFrom, inlined } from "./sql/values";
-import { buildDelete, buildInsert, upsertColumns, buildUpdate, type JsonObject, type Returning } from "./sql/write";
+import { buildDelete, buildInsert, buildUpdate, type JsonObject, type Returning } from "./sql/write";
 import { ALIAS, ROOT_ALIAS } from "./constants";
 
 /** Who is making the call, as far as the database is concerned. */
@@ -337,6 +337,9 @@ export const planTable = (
   if (operation === "insert") {
     if (!body) throw new EngineError("invalid_body", "Empty or invalid json");
     const rows = asRows(body.value);
+    // Only a merge-duplicates upsert can answer `200` rather than `201`, so only it needs the count
+    // (PostgREST: `isInsert && (isPut || resolution == MergeDuplicates)`).
+    const countInserted = prefer.resolution === "merge-duplicates";
     const insertSql = buildInsert({
       rel,
       rows,
@@ -344,7 +347,7 @@ export const planTable = (
       onConflict: query.onConflict,
       resolution: prefer.resolution,
       missingDefault: prefer.missing === "default",
-      flagInserted: true,
+      countInserted,
       returning,
     });
     const { rows: outRows, shape } = rowsFor(returning);
@@ -360,7 +363,7 @@ export const planTable = (
         shape,
         stripNulls: strip,
         ...formatOptions(format, qp),
-        upsertColumns: insertSql.includes(`${ALIAS}_inserted`) ? upsertColumns(rel, returning) : undefined,
+        countInserted,
       }),
     };
   }
@@ -489,7 +492,15 @@ export const planTable = (
     }
   }
   const full: JsonObject = { ...Object.fromEntries(rel.pk.map((c) => [c, keyValues.get(c)])), ...obj };
-  const putSql = buildInsert({ rel, rows: [full], onConflict: rel.pk, resolution: "merge-duplicates", returning });
+  // A `PUT` answers `201` when it inserted and `200` when it replaced, so it counts too.
+  const putSql = buildInsert({
+    rel,
+    rows: [full],
+    onConflict: rel.pk,
+    resolution: "merge-duplicates",
+    countInserted: true,
+    returning,
+  });
   const { rows: outRows, shape } = rowsFor(returning);
   return {
     ...common,
@@ -503,6 +514,7 @@ export const planTable = (
       shape,
       stripNulls: strip,
       ...formatOptions(format, qp),
+      countInserted: true,
     }),
   };
 };
@@ -666,8 +678,11 @@ export interface SqlResult {
   readonly rows: number;
   readonly total: number | undefined;
   readonly settings: ReadonlyArray<string | null>;
-  /** An upsert that inserted no row (every one of them already existed). */
-  readonly noneInserted: boolean;
+  /**
+   * How many rows an upsert really inserted, the rest having already existed. `undefined` when
+   * nothing counted them: the call was not an upsert, or its payload had no row to insert.
+   */
+  readonly inserted: number | undefined;
 }
 
 /** What the statement made, before `shownBody` decides whether the caller wants it. */
@@ -677,7 +692,7 @@ interface RawResult {
   readonly total: number | undefined;
   readonly planned: number | undefined;
   readonly settings: ReadonlyArray<string | null>;
-  readonly noneInserted: boolean;
+  readonly inserted: number | undefined;
 }
 
 /** How a call runs, beyond what the plan says. */
@@ -754,7 +769,7 @@ export const execute = async (
             total: undefined,
             planned: undefined,
             settings: [],
-            noneInserted: false,
+            inserted: undefined,
           } satisfies RawResult);
         }
 
@@ -767,8 +782,8 @@ export const execute = async (
           total: row["total_result_set"] == null ? undefined : Number(row["total_result_set"]),
           planned,
           settings: settingsOf(row),
-          noneInserted:
-            row["none_inserted"] === true || row["none_inserted"] === "true" || row["none_inserted"] === "t",
+          // `NULL` when no counter ran; a driver may hand the integer back as text.
+          inserted: row["inserted"] == null ? undefined : Number(row["inserted"]),
         };
 
         // Checks that must roll back the transaction when they fail.
@@ -835,7 +850,7 @@ export const execute = async (
     rows: result.rows,
     total: totalOf(env, prefer, plan, result),
     settings: result.settings,
-    noneInserted: result.noneInserted,
+    inserted: result.inserted,
   };
 };
 
