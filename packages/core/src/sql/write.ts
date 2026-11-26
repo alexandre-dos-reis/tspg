@@ -215,6 +215,8 @@ export interface UpdateOptions {
   readonly clauses?: ReadonlyArray<string> | undefined;
   readonly filters: ReadonlyArray<FilterNode>;
   readonly returning: Returning;
+  /** For a representation: the columns it reads, when they are only columns; all of them otherwise. */
+  readonly returningColumns?: ReadonlyArray<string> | undefined;
   readonly values?: Values | undefined;
 }
 
@@ -257,6 +259,8 @@ export interface DeleteOptions {
   readonly rel: Relation;
   readonly filters: ReadonlyArray<FilterNode>;
   readonly returning: Returning;
+  /** For a representation: the columns it reads, when they are only columns; all of them otherwise. */
+  readonly returningColumns?: ReadonlyArray<string> | undefined;
   readonly values?: Values | undefined;
 }
 
