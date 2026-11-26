@@ -28,7 +28,6 @@ const distance = (a: string, b: string): number => 1 - levenshtein(a, b) / Math.
 /** The candidate PostgREST would suggest for `value`, if any. */
 export const fuzzyGetOne = (candidates: ReadonlyArray<string>, value: string, minScore: number): string | undefined => {
   const unique = [...new Set(candidates)];
-  const key = normalized(value);
   const exact = unique.find((c) => c.toLowerCase() === value.toLowerCase());
   if (exact !== undefined) return exact;
   for (let size = GRAM_UPPER; size >= GRAM_LOWER; size--) {
