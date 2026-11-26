@@ -1,7 +1,7 @@
-import { ROOT_ALIAS } from "../constants";
+import { ALIAS, ROOT_ALIAS } from "../constants";
 import { EngineError } from "../errors";
 import type { FilterNode } from "../parse/filter";
-import { quoteIdent, quoteQualified } from "../quote";
+import { literal, quoteIdent, quoteQualified } from "../quote";
 import { pgrstKey, type Relation } from "../schema";
 import { whereSql } from "./filters";
 import { type Values, inlined } from "./values";
@@ -31,6 +31,30 @@ const columnNotFound = (rel: Relation, column: string) =>
 const checkColumns = (rel: Relation, cols: ReadonlyArray<string>): void => {
   const known = new Set(rel.columns.map((c) => c.name));
   for (const c of cols) if (!known.has(c)) throw columnNotFound(rel, c);
+};
+
+/** The columns among `cols` read from JSON through a data representation, with their functions. */
+const representedKeys = (rel: Relation, cols: ReadonlyArray<string>): Map<string, string> => {
+  const out = new Map<string, string>();
+  for (const c of cols) {
+    const fn = rel.columns.find((x) => x.name === c)?.representation?.fromJson;
+    if (fn) out.set(c, fn);
+  }
+  return out;
+};
+
+/**
+ * The JSON object `json_populate_record` is given: without the keys a data representation reads (it
+ * would read them with the base type), and -- with `columns=` -- with only the listed keys, since
+ * PostgREST reads nothing else of the payload (a value it ignores may well not parse).
+ */
+const withoutKeys = (json: string, keys: ReadonlyMap<string, string>, only?: ReadonlyArray<string>): string => {
+  let out = json;
+  if (only) {
+    const listed = `ARRAY[${only.map(literal).join(", ")}]::text[]`;
+    out = `(SELECT coalesce(jsonb_object_agg(_k.key, _k.value), '{}'::jsonb) FROM jsonb_each((${out})::jsonb) AS _k WHERE _k.key = ANY(${listed}))::json`;
+  }
+  return keys.size === 0 ? out : `((${out})::jsonb - ARRAY[${[...keys.keys()].map(literal).join(", ")}]::text[])::json`;
 };
 
 const unionKeys = (rows: ReadonlyArray<JsonObject>): string[] => {
@@ -129,18 +153,21 @@ export const buildInsert = (o: InsertOptions): string => {
   const colList = cols.map(quoteIdent).join(", ");
   const typed = `null::${table}`;
   const json = "($1::text)::json";
+  const fromJson = representedKeys(rel, cols);
 
   let select: string;
-  if (o.missingDefault) {
+  if (o.missingDefault || fromJson.size > 0 || o.columns) {
     const byName = new Map(rel.columns.map((c) => [c.name, c]));
     const exprs = cols.map((c) => {
-      const allPresent = o.rows.every((r) => c in r);
-      const value = `_p.${quoteIdent(c)}`;
+      const allPresent = !o.missingDefault || o.rows.every((r) => c in r);
+      // a data representation reads the column's JSON through its own function
+      const fn = fromJson.get(c);
+      const value = fn ? `${fn}(_e.value -> ${literal(c)})` : `_p.${quoteIdent(c)}`;
       if (allPresent) return value;
       const dflt = byName.get(c)?.defaultExpr ?? "NULL";
       return `CASE WHEN (_e.value::jsonb) ? ${"'" + c.replace(/'/g, "''") + "'"} THEN ${value} ELSE ${dflt} END`;
     });
-    select = `SELECT ${exprs.join(", ")} FROM json_array_elements(${json}) AS _e(value) CROSS JOIN LATERAL json_populate_record(${typed}, _e.value) AS _p`;
+    select = `SELECT ${exprs.join(", ")} FROM json_array_elements(${json}) AS _e(value) CROSS JOIN LATERAL json_populate_record(${typed}, ${withoutKeys("_e.value", fromJson, o.columns)}) AS _p`;
   } else {
     select = `SELECT ${colList} FROM json_populate_recordset(${typed}, ${json})`;
   }
@@ -195,10 +222,26 @@ export const buildUpdate = (o: UpdateOptions): string | null => {
   if (cols.length === 0 && clauses.length === 0) return null;
   const table = quoteQualified(rel.schema, rel.name);
   const valueOf = (c: string) => (o.columns && o.missingDefault && !(c in o.body) ? "DEFAULT" : `_u.${quoteIdent(c)}`);
-  const set = [...cols.map((c) => `${quoteIdent(c)} = ${valueOf(c)}`), ...clauses].join(", ");
+  const fromJson = representedKeys(rel, cols);
+  // a data representation is read in the payload's subquery, so it only runs for the rows that are written
+  const represented = [...fromJson].filter(([c]) => !(o.columns && o.missingDefault && !(c in o.body)));
+  const value = (c: string) =>
+    represented.some(([r]) => r === c) ? `_u.${quoteIdent(`${ALIAS}_r_${c}`)}` : valueOf(c);
+  const set = [...cols.map((c) => `${quoteIdent(c)} = ${value(c)}`), ...clauses].join(", ");
   const where = whereSql(o.filters, ROOT_ALIAS, rel, o.values ?? inlined);
   // the JSON body is `$1`, and only a statement that reads it may mention it
-  const from = cols.length ? ` FROM (SELECT * FROM json_populate_record(null::${table}, ($1::text)::json)) AS _u` : "";
+  const from = cols.length
+    ? ` FROM (SELECT _p.*${represented
+        .map(([c, fn]) => `, ${fn}(_rj.${quoteIdent(c)}) AS ${quoteIdent(`${ALIAS}_r_${c}`)}`)
+        .join(
+          "",
+        )} FROM json_populate_record(null::${table}, ${withoutKeys("($1::text)::json", fromJson, o.columns)}) AS _p${
+        // read through `json_to_record`, as PostgREST does: a function of a constant would be run at plan time
+        represented.length
+          ? `, json_to_record(($1::text)::json) AS _rj(${represented.map(([c]) => `${quoteIdent(c)} json`).join(", ")})`
+          : ""
+      }) AS _u`
+    : "";
   return (
     `UPDATE ${table} AS ${quoteIdent(ROOT_ALIAS)} SET ${set}${from}` +
     `${where.length ? ` WHERE ${where.join(" AND ")}` : ""} RETURNING ${returningSql(rel, o.returning)}`

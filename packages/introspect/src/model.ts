@@ -60,6 +60,18 @@ export interface Column {
   readonly identity?: "always" | "by-default" | undefined;
   readonly comment: string | null;
   readonly position: number;
+  /**
+   * PostgREST's "data representations": for a column whose type is a domain with implicit casts to or
+   * from `json` or `text` done by a function, those functions, schema-qualified. `toJson` renders the
+   * column in a response, `fromJson` reads it from a payload, `fromText` from a query string value.
+   */
+  readonly representation?:
+    | {
+        readonly toJson?: string | undefined;
+        readonly fromJson?: string | undefined;
+        readonly fromText?: string | undefined;
+      }
+    | undefined;
 }
 
 export type RelationKind = "table" | "view" | "matview" | "foreign" | "partitioned";

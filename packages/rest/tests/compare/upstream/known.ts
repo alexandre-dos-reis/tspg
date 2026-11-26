@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 80 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 51 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -82,37 +82,6 @@ export type Cluster = keyof typeof CLUSTERS;
 
 /** Every difference, by case name (`UpstreamCase.name`). */
 export const KNOWN: Record<string, Cluster> = {
-  // ── data representations (29) ──
-  "GET /datarep_next_two_todos?select=id,name,datarep_todos!datarep_next_two_todos_first_item_id_fkey(label_color,due_at)&datarep_todos.label_color=neq.000100&order=id": "data representations",
-  "GET /datarep_next_two_todos?select=id,name,first_item:datarep_todos!datarep_next_two_todos_first_item_id_fkey(label_color,due_at)&order=id": "data representations",
-  "GET /datarep_next_two_todos?select=id,name,second_item:datarep_todos!datarep_next_two_todos_second_item_id_fkey(*)&order=id": "data representations",
-  "GET /datarep_todos?id=lt.4": "data representations",
-  "GET /datarep_todos?select=*&id=lt.4": "data representations",
-  "GET /datarep_todos?select=due_at,*&id=lt.4": "data representations",
-  "GET /datarep_todos?select=id,clr:label_color&id=lt.4": "data representations",
-  "GET /datarep_todos?select=id,clr:label_color::text&id=lt.4": "data representations",
-  "GET /datarep_todos?select=id,due_at&label_color=eq.000100": "data representations",
-  "GET /datarep_todos?select=id,due_at&label_color=in.(000100,01E240)": "data representations",
-  "GET /datarep_todos?select=id,due_at&label_color=not.in.(000000,01E240)": "data representations",
-  "GET /datarep_todos?select=id,label_color&id=lt.4": "data representations",
-  "GET /datarep_todos?select=id,label_color,due_at&id=gt.2&id=lt.5": "data representations",
-  "GET /datarep_todos?select=id,label_color,due_at&id=lt.4": "data representations",
-  "GET /datarep_todos_computed?select=id,label_color,dark_color": "data representations",
-  "PATCH /datarep_todos_computed?id=eq.2 +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
-  "PATCH /datarep_todos_computed?id=eq.2 +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:20Z\"}>": "data representations",
-  "PATCH /datarep_todos_computed?id=eq.2&columns=due_at +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"due_at\": \"2019-01-03T11:00:00Z\", \"smth\": \"here\", \"label_color\": \"invalid\", \"fake_id\": 13}>": "data representations",
-  "PATCH /datarep_todos_computed?id=eq.2&select=id,label_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
-  "PATCH /datarep_todos_computed?id=lt.4 +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
-  "PATCH /datarep_todos_computed?id=lt.4&select=id,name,label_color,dark_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
-  "POST /datarep_todos +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\"}>": "data representations",
-  "POST /datarep_todos +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\", \"icon_image\": \"3q2+7w\", \"created_at\":-15, \"budget\": \"-100000000000000.13\"}>": "data representations",
-  "POST /datarep_todos?columns=id,label_color&select=id,name,label_color,due_at +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"invalid but should be ignored\"}>": "data representations",
-  "POST /datarep_todos?select=id,label_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\"}>": "data representations",
-  "POST /datarep_todos_computed +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\"}>": "data representations",
-  "POST /datarep_todos_computed +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\"}>": "data representations",
-  "POST /datarep_todos_computed?columns=id,label_color&select=id,name,label_color,due_at +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"invalid but should be ignored\"}>": "data representations",
-  "POST /datarep_todos_computed?select=id,label_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\"}>": "data representations",
-
   // ── a media type handled in the database (30) ──
   "GET /items?id=in.(1,2)&select=id,always_true +{\"Accept\":\"pg/outfunc\"}": "a media type handled in the database",
   "GET /lines +{\"Accept\":\"application/vnd.geo2+json\"}": "a media type handled in the database",

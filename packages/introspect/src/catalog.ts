@@ -17,6 +17,18 @@ import type {
 const kindOf = (k: string): RelationKind =>
   k === "v" ? "view" : k === "m" ? "matview" : k === "f" ? "foreign" : k === "p" ? "partitioned" : "table";
 
+/**
+ * The function of an implicit cast from `source` to `target`, schema-qualified, when one of the two is
+ * a domain (`typ`, the column's type, is the domain) -- PostgREST's `dataRepresentations`.
+ */
+const castFunctionSql = (source: string, target: string, typ: string): string =>
+  `(SELECT quote_ident(fn.nspname) || '.' || quote_ident(fp.proname)
+      FROM pg_cast pc
+      JOIN pg_proc fp ON fp.oid = pc.castfunc
+      JOIN pg_namespace fn ON fn.oid = fp.pronamespace
+     WHERE ${typ}.typtype = 'd' AND pc.castsource = ${source} AND pc.casttarget = ${target}
+       AND pc.castcontext = 'i' AND pc.castmethod = 'f' AND has_function_privilege(pc.castfunc, 'execute'))`;
+
 const schemaList = (schemas: ReadonlyArray<string>) => `ARRAY[${schemas.map(literal).join(",")}]::text[]`;
 
 const asJson = (inner: string) => `SELECT coalesce(json_agg(r), '[]'::json)::text AS j FROM (${inner}) r`;
@@ -192,10 +204,16 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     pos: number;
     enum_labels: string[] | null;
     composite: CompositeRef | null;
+    to_json: string | null;
+    from_json: string | null;
+    from_text: string | null;
   }>(
     db,
     `SELECT n.nspname AS schema, c.relname AS "table", a.attname AS name,
             format_type(a.atttypid, a.atttypmod) AS type,
+            ${castFunctionSql("a.atttypid", "'json'::regtype", "ty")} AS to_json,
+            ${castFunctionSql("'json'::regtype", "a.atttypid", "ty")} AS from_json,
+            ${castFunctionSql("'text'::regtype", "a.atttypid", "ty")} AS from_text,
             ${compositeOfSql("a.atttypid")} AS composite,
             ${enumLabelsSql("a.atttypid")} AS enum_labels,
             NOT a.attnotnull AS nullable,
@@ -576,6 +594,15 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
           : {}),
       comment: c.comment,
       position: c.pos,
+      ...(c.to_json || c.from_json || c.from_text
+        ? {
+            representation: {
+              ...(c.to_json ? { toJson: c.to_json } : {}),
+              ...(c.from_json ? { fromJson: c.from_json } : {}),
+              ...(c.from_text ? { fromText: c.from_text } : {}),
+            },
+          }
+        : {}),
     });
     colsByRel.set(key, list);
   }

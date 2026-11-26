@@ -73,7 +73,29 @@ interface Ctx {
   readonly values: Values;
 }
 
+/** A column rendered through its data representation, when it has one (PostgREST's `withOutputFormat`). */
+const rendered = (alias: string, rel: Relation, name: string): string | undefined => {
+  const fn = rel.columns.find((c) => c.name === name)?.representation?.toJson;
+  return fn ? `${fn}(${quoteIdent(alias)}.${quoteIdent(name)})` : undefined;
+};
+
+/** `*`, as columns when one of them is rendered through a data representation. */
+const starSql = (alias: string, rel: Relation): string =>
+  rel.columns.some((c) => c.representation?.toJson)
+    ? rel.columns
+        .map((c) => {
+          const r = rendered(alias, rel, c.name);
+          return r ? `${r} AS ${quoteIdent(c.name)}` : `${quoteIdent(alias)}.${quoteIdent(c.name)}`;
+        })
+        .join(", ")
+    : `${quoteIdent(alias)}.*`;
+
 const fieldExpr = (item: FieldItem, alias: string, rel: Relation): string => {
+  const output = item.field.json.length === 0 ? rendered(alias, rel, item.field.name) : undefined;
+  if (output) {
+    const expr = item.cast ? `(${output})::${item.cast}` : output;
+    return `${expr} AS ${quoteIdent(outputName(item))}`;
+  }
   const base = fieldSql(alias, item.field, rel);
   // `::` binds tighter than `->>`: a path is cast as a whole, not its last key
   const expr = item.cast ? (item.field.json.length ? `(${base})::${item.cast}` : `${base}::${item.cast}`) : base;
@@ -202,7 +224,7 @@ const buildItems = (
             cols.push(e);
             groupBy.push(e);
           }
-        } else cols.push(`${quoteIdent(alias)}.*`);
+        } else cols.push(starSql(alias, rel));
         break;
       case "field":
         cols.push(fieldExpr(item, alias, rel));
