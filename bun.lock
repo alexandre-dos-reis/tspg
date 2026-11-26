@@ -43,7 +43,7 @@
     },
     "packages/query": {
       "name": "@tspg/query",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "devDependencies": {
         "@tspg/adapters": "workspace:*",
         "@tspg/core": "workspace:*",
@@ -61,7 +61,7 @@
     },
     "packages/rest": {
       "name": "@tspg/rest",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "devDependencies": {
         "@tspg/adapters": "workspace:*",
         "@tspg/core": "workspace:*",
@@ -79,7 +79,7 @@
     },
     "packages/tanstack-db-postgrest": {
       "name": "@tspg/tanstack-db-postgrest",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "bin": {
         "tspg-db": "./dist/bin.js",
       },

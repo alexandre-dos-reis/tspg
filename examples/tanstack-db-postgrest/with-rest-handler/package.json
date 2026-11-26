@@ -12,8 +12,8 @@
     "@tanstack/db": "1.0.0-rc.1.5",
     "@tanstack/query-core": "^5.90.15",
     "@tanstack/query-db-collection": "^1.5.2",
-    "@tspg/rest": "^0.2.0",
-    "@tspg/tanstack-db-postgrest": "^0.1.0"
+    "@tspg/rest": "^0.3.0",
+    "@tspg/tanstack-db-postgrest": "^0.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

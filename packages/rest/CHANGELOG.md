@@ -1,5 +1,76 @@
 # @tspg/rest
 
+## 0.3.0
+
+### Features
+
+- 3d893d3: `close()` closes the database driver, a new `onClose` option takes that over, and the `db`
+  option is now `adapter`
+
+  **Breaking**: the adapter is passed as `adapter`, not `db` -- it is a `DbAdapter`, which is also
+  what `onClose` is handed and what the docs call it:
+
+  ```ts
+  const api = await createRest({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
+  ```
+
+  `@tspg/tanstack-db-postgrest`'s `generate()` takes its catalog source the same way --
+  `generate({ adapter, schemas })`, not `{ db, schemas }`. `tspg-db generate` is unaffected: it is a
+  command line.
+
+  `rest.close()` and `db.close()` now call the adapter's own `close()` — `pool.end()`, `sql.end()`,
+  `pglite.close()`; nothing for an adapter that has none — so the driver created for an instance no
+  longer has to be ended beside it. Closing twice closes once, and a driver something else has already
+  closed is not an error.
+
+  **Breaking** for a driver that must outlive the instance, or is shared: pass `onClose`, which is
+  handed the adapter and decides the whole of what closing does.
+
+  ```ts
+  const adapter = nodePostgresAdapter(pool);
+  const api = await createRest({ adapter, onClose: () => {} }); // leaves the pool alone
+  const query = createQuery({ adapter }); // this one ends it
+  ```
+
+### Bug Fixes
+
+- 9d2c8e8: an upsert counts the rows it inserted instead of reading `xmax`, so views work
+
+  A `Prefer: resolution=merge-duplicates` upsert used to return `(relation.xmax = 0)` alongside the
+  rows, to tell an inserted tuple from an updated one and answer `200` rather than `201` when nothing
+  was inserted. `xmax` is a **table** system column: through a view -- the usual PostgREST arrangement,
+  an exposed view over a table in a schema that is not exposed -- every upsert failed with
+  `42703 column <name>.xmax does not exist`. Partitioned and foreign tables have no usable `xmax`
+  either, and the marker was not optional: no combination of preferences could turn it off.
+
+  The rows really inserted are now counted the way PostgREST counts them: a predicate that is always
+  true, on the `WHERE` of the insert's source and on the `WHERE` of `DO UPDATE`, moving a
+  transaction-local `set_config('pgrst.inserted', …)` up once per candidate row and down once per row
+  that turned out to exist. No system column is read, so an upsert works on any relation that can be
+  inserted into.
+
+  Two statuses move with it, both towards PostgREST (pinned by the differential suite):
+
+  - a `merge-duplicates` upsert whose payload has nothing to insert -- `[]` -- answers `200`, where it
+    used to answer `201`;
+  - a `PUT` that **inserts** its row answers `201` with `Prefer: return=representation`, where it used
+    to answer `200`. Replacing an existing row still answers `200`, and without a representation it is
+    `204` either way.
+
+- 6aed184: introspection reads constraints and view columns in a stable order
+
+  The `pg_constraint` query had no `ORDER BY`, unlike every other query introspection runs, so the
+  order of `foreignKeys` -- and of the `hints` on an ambiguous embed, which are built from it -- was
+  whatever the heap returned. A generated descriptor is committed by the app, so the same database
+  could regenerate a different file; `examples/query/with-transactions` flaked on exactly that. They
+  are now ordered by schema, table and constraint name.
+
+  The view-column query was ordered by `oid`, which is creation order: two databases built from the
+  same SQL in a different sequence disagreed on the order of the foreign keys views add, and on which
+  column of a view that exposes one table column twice a key is built from. It is now ordered by
+  schema, view and column position, so the same SQL gives the same schema whatever order it was run
+  in.
+
 ## 0.2.0
 
 ### Features
