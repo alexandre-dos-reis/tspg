@@ -57,12 +57,11 @@ beforeAll(async () => {
     INSERT INTO api.items (name, qty, active) VALUES
       ('apple', 5, true), ('Banana', 0, true), ('cherry', NULL, false), ('50%_off', 7, true), ('date', 12, false);
   `);
-  rest = await createRest({ db: pgliteAdapter(db), schemas: ["api"], anonymousRole: "anon" });
+  rest = await createRest({ adapter: pgliteAdapter(db), schemas: ["api"], anonymousRole: "anon" });
 });
 
 afterAll(async () => {
-  await rest.close();
-  await db.close();
+  await rest.close(); // closes the PGlite too: no db.close() beside it
 });
 
 function items() {

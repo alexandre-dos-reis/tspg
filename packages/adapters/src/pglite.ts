@@ -20,7 +20,7 @@ const session = (db: PGliteQueryable): DbSession => ({
  *
  * ```ts
  * import { PGlite } from "@electric-sql/pglite";
- * const api = await createPgRest({ db: pgliteAdapter(new PGlite()), schemas: ["api"] });
+ * const api = await createPgRest({ adapter: pgliteAdapter(new PGlite()), schemas: ["api"] });
  * ```
  */
 export const pgliteAdapter = (db: PGliteLike): DbAdapter => ({

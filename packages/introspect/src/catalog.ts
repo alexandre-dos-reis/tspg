@@ -216,6 +216,8 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       ORDER BY 1, 2, a.attnum`,
   );
 
+  // Ordered, like every other query here: the heap order of pg_constraint is not stable, and a
+  // generated descriptor -- the ambiguous embed `hints` especially -- is committed by the app.
   const conRows = await run<{
     name: string;
     type: string;
@@ -244,11 +246,15 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       WHERE con.contype IN ('p','u','f')
         AND con.conparentid = 0
         AND (ns.nspname = ANY(${S}) OR fns.nspname = ANY(${S})
-             OR (ns.nspname, rel.relname) IN (${sourceRelationsSql(S)}))`,
+             OR (ns.nspname, rel.relname) IN (${sourceRelationsSql(S)}))
+      ORDER BY ns.nspname, rel.relname, con.conname`,
   );
 
   // Plain columns of views (and materialized views) and the table column each one is read from,
   // taken from the rewrite rule's target list. PostgREST uses this to follow foreign keys through views.
+  // The DISTINCT ON has to be ordered by its own keys, so the naming order is the outer one: it
+  // decides the order of the foreign keys views add, and which column of a view that exposes one
+  // table column twice is the one a key is built from.
   const viewRows = await run<{
     vschema: string;
     vname: string;
@@ -258,21 +264,24 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     tcol: string;
   }>(
     db,
-    `SELECT DISTINCT ON (vc.oid, m.x[1]::int)
-            vn.nspname AS vschema, vc.relname AS vname, va.attname AS vcol,
-            tn.nspname AS tschema, tc.relname AS tname, ta.attname AS tcol
-       FROM pg_rewrite rw
-       JOIN pg_class vc ON vc.oid = rw.ev_class AND vc.relkind IN ('v','m')
-       JOIN pg_namespace vn ON vn.oid = vc.relnamespace
-       CROSS JOIN LATERAL regexp_matches(rw.ev_action::text,
-            ':resno (\\d+) :resname [^:]* :ressortgroupref \\d+ :resorigtbl (\\d+) :resorigcol (\\d+) :resjunk false', 'g')
-            WITH ORDINALITY AS m(x, ord)
-       JOIN pg_attribute va ON va.attrelid = vc.oid AND va.attnum = m.x[1]::int AND NOT va.attisdropped
-       JOIN pg_class tc ON tc.oid = m.x[2]::oid
-       JOIN pg_namespace tn ON tn.oid = tc.relnamespace
-       JOIN pg_attribute ta ON ta.attrelid = tc.oid AND ta.attnum = m.x[3]::int
-      WHERE vn.nspname = ANY(${S}) AND rw.rulename = '_RETURN' AND m.x[2]::oid <> 0
-      ORDER BY vc.oid, m.x[1]::int, m.ord DESC`,
+    `SELECT v.vschema, v.vname, v.vcol, v.tschema, v.tname, v.tcol
+       FROM (SELECT DISTINCT ON (vc.oid, m.x[1]::int)
+                    vn.nspname AS vschema, vc.relname AS vname, va.attname AS vcol, va.attnum AS vpos,
+                    tn.nspname AS tschema, tc.relname AS tname, ta.attname AS tcol
+               FROM pg_rewrite rw
+               JOIN pg_class vc ON vc.oid = rw.ev_class AND vc.relkind IN ('v','m')
+               JOIN pg_namespace vn ON vn.oid = vc.relnamespace
+               CROSS JOIN LATERAL regexp_matches(rw.ev_action::text,
+                    ':resno (\\d+) :resname [^:]* :ressortgroupref \\d+ :resorigtbl (\\d+) :resorigcol (\\d+) :resjunk false', 'g')
+                    WITH ORDINALITY AS m(x, ord)
+               JOIN pg_attribute va ON va.attrelid = vc.oid AND va.attnum = m.x[1]::int AND NOT va.attisdropped
+               JOIN pg_class tc ON tc.oid = m.x[2]::oid
+               JOIN pg_namespace tn ON tn.oid = tc.relnamespace
+               JOIN pg_attribute ta ON ta.attrelid = tc.oid AND ta.attnum = m.x[3]::int
+              WHERE vn.nspname = ANY(${S}) AND rw.rulename = '_RETURN' AND m.x[2]::oid <> 0
+              -- the last match for a column wins the DISTINCT ON, so this inner order is the rule's
+              ORDER BY vc.oid, m.x[1]::int, m.ord DESC) v
+      ORDER BY v.vschema, v.vname, v.vpos`,
   );
 
   // Views whose own query has an outer join, and whose columns therefore cannot inherit the source

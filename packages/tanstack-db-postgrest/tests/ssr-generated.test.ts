@@ -37,10 +37,10 @@ beforeAll(async () => {
     INSERT INTO api.lines VALUES (12, 3, 1);
     INSERT INTO v2.things VALUES (1);
   `);
-  rest = await createRest({ db: pgliteAdapter(db), schemas: ["api", "v2"], anonymousRole: "anon" });
+  rest = await createRest({ adapter: pgliteAdapter(db), schemas: ["api", "v2"], anonymousRole: "anon" });
   writeFileSync(
     file,
-    (await generate({ db: pgliteAdapter(db), schemas: ["api", "v2"] })).replaceAll(
+    (await generate({ adapter: pgliteAdapter(db), schemas: ["api", "v2"] })).replaceAll(
       '"@tspg/tanstack-db-postgrest"',
       '"../src/index.ts"',
     ),
@@ -54,8 +54,7 @@ beforeAll(async () => {
 afterAll(async () => {
   globalThis.fetch = realFetch;
   rmSync(file, { force: true });
-  await rest.close();
-  await db.close();
+  await rest.close(); // closes the PGlite too: no db.close() beside it
 });
 
 test("a descriptor for each table with a primary key, the schema in the id", () => {

@@ -14,7 +14,7 @@ await pglite.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8")
 // schema to expose. gen-types.ts reads the catalog through this same object, so the types and the
 // instance cannot end up describing different schemas.
 export const restOptions: QueryOptions = {
-  db: pgliteAdapter(pglite),
+  adapter: pgliteAdapter(pglite),
   anonymousRole: "anon",
   schemas: ["api"],
 };

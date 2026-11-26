@@ -1,6 +1,6 @@
 # Database adapters
 
-`db` is a `DbAdapter` — the only thing pg-rest needs from a driver:
+`adapter` is a `DbAdapter` — the only thing pg-rest needs from a driver:
 
 ```ts ignore
 interface DbAdapter {
@@ -31,10 +31,23 @@ import pg from "pg";
 import { nodePostgresAdapter } from "@tspg/rest/adapters/node-postgres";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const rest = await createRest({ db: nodePostgresAdapter(pool), schemas: ["api"] });
+const rest = await createRest({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
 ```
 
-The libraries never close your driver: `rest.close()` stops the handler, the pool is yours to end.
+`rest.close()` stops the handler and ends the pool — `close()` calls the adapter's own `close()` (`pool.end()`,
+`sql.end()`, `pglite.close()`; nothing, for an adapter that has none), and does it once however often it is called. The
+`onClose` option takes that over: it is handed the same adapter, as `adapter`, and decides the whole of what closing
+does.
+
+```ts
+const adapter = nodePostgresAdapter(pool);
+// the pool outlives the handler: the application ends it
+const rest = await createRest({ adapter, schemas: ["api"], onClose: () => {} });
+```
+
+That is what a driver shared between instances needs — an app that uses both packages creates two instances over one
+adapter, and whichever closes first would otherwise end the pool under the other. Give `onClose: () => {}` to all but
+one of them, or to all of them and end the driver yourself.
 
 ## Writing one
 

@@ -120,14 +120,14 @@ CREATE FUNCTION api.recent_orders(api.clients) RETURNS SETOF api.orders …;
 ## Getting an instance
 
 `schema` below is the descriptor generated at build time ([`types.md`](types.md)), which is what makes an instance read
-the catalog *never*. Leave it out and name the schemas instead — `createQuery({ db, schemas: ["api"] })` — and it reads
+the catalog *never*. Leave it out and name the schemas instead — `createQuery({ adapter, schemas: ["api"] })` — and it reads
 the catalog itself, once, on its first operation, or on `ready()` if you want that round trip at start-up. Everything
 else on this page is the same either way; the options are in [`options.md`](options.md).
 
 Without a type argument, the input is loosely typed and you name the result yourself:
 
 ```ts
-const pgRest = createQuery({ db: nodePostgresAdapter(pool), schema });
+const pgRest = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const { data } = await pgRest.select<Array<{ id: number; name: string }>>({
   table: "clients",
@@ -140,7 +140,7 @@ With one, everything inside is checked and the result is inferred. The type come
 ```ts
 import type { Database } from "./db.generated.ts";
 
-const pgRest = createQuery<Database>({ db: nodePostgresAdapter(pool), schema });
+const pgRest = createQuery<Database>({ adapter: nodePostgresAdapter(pool), schema });
 
 const { data } = await pgRest.select({ table: "clients", columns: ["id", "name"] });
 // data: Array<{ id: number; name: string }>
@@ -343,7 +343,7 @@ const regex = await pgRest.select({
 `IS NOT NULL`; `$is` is for the three-valued logic of booleans:
 
 ```ts
-const untyped = createQuery({ db: nodePostgresAdapter(pool), schema });
+const untyped = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const nulls = await pgRest.select({
   table: "clients",
@@ -430,7 +430,7 @@ const whole = await pgRest.select({
 too, and the range operators on a range column:
 
 ```ts
-const untyped = createQuery({ db: nodePostgresAdapter(pool), schema });
+const untyped = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const json = await pgRest.select({
   table: "clients",
@@ -455,7 +455,7 @@ const ranges = await untyped.select({
 operator applies to the result. It is available on an instance created without a type argument:
 
 ```ts
-const untyped = createQuery({ db: nodePostgresAdapter(pool), schema });
+const untyped = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const paths = await untyped.select({
   table: "venues",
@@ -615,7 +615,7 @@ const byOwner = await pgRest.select({
 // `{ name: "Ada" }` is not "whose name is Ada": it compares against a row whose other fields are
 // NULL. For one field, use its path -- on an instance created without a type argument, like any
 // other JSON path (see "What the typed path does not describe")
-const untyped = createQuery({ db: nodePostgresAdapter(pool), schema });
+const untyped = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 const byName = await untyped.select({ table: "venues", columns: ["id"], where: { "owner->>name": "Ada" } });
 
 // writing one: the fields left out are NULL
@@ -631,7 +631,7 @@ The arrow operators reach a single field, and work on a composite column exactly
 through an array — because the column is converted with `to_jsonb()` first:
 
 ```ts
-const untyped = createQuery({ db: nodePostgresAdapter(pool), schema });
+const untyped = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const fields = await untyped.select({
   table: "venues",
@@ -897,7 +897,7 @@ const capped = await pgRest.update({
 `$ov` take two operands; `$and` and `$or` any number; `$not` one.
 
 ```ts
-const untyped = createQuery({ db: nodePostgresAdapter(pool), schema });
+const untyped = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const booleans = await untyped.update({
   table: "todos",
@@ -1464,7 +1464,7 @@ void pgRest.select({ table: "orders", columns: ["status", "total.sum()"] });
 They work on an instance created without a type argument, where the input is loose:
 
 ```ts
-const loose = createQuery({ db: nodePostgresAdapter(pool), schema });
+const loose = createQuery({ adapter: nodePostgresAdapter(pool), schema });
 
 const { data } = await loose.select<Array<{ status: string; sum: number }>>({
   table: "orders",

@@ -128,7 +128,7 @@ application holds the pool, and sees a `Response`.
 
 ```ts ignore
 const pgRest = await createQuery({
-  db: nodePostgresAdapter(pool),
+  adapter: nodePostgresAdapter(pool),
   onQuery: (event) => {
     //        sql, params, durationMs, rowCount, status, error, role, source: "handle" | "query"
     if (event.durationMs > 200) console.warn(event.sql);
@@ -189,7 +189,7 @@ HTTP.
 **The shape.** An opt-in that makes the pipeline's intermediate values visible where the result already is:
 
 ```ts ignore
-const pgRest = await createQuery({ db: nodePostgresAdapter(pool), debug: true });
+const pgRest = await createQuery({ adapter: nodePostgresAdapter(pool), debug: true });
 
 const { data, error, debug } = await pgRest.select({ table: "todos", columns: ["id", { tags: ["label"] }] });
 debug?.sql; //      the statement, as the builders wrote it

@@ -5,7 +5,7 @@ import { columnType, introspect, tsKey } from "@tspg/introspect";
 import type { DbSession, Relation, SchemaCache } from "@tspg/introspect";
 
 /** Where the catalog comes from: one already read, or a database session to read it from. */
-export type GenerateSource = SchemaCache | { readonly db: DbSession; readonly schemas?: ReadonlyArray<string> };
+export type GenerateSource = SchemaCache | { readonly adapter: DbSession; readonly schemas?: ReadonlyArray<string> };
 
 export interface GenerateOptions {
   /** Name of the exported `Database` type. Default `"Database"`. */

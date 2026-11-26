@@ -29,7 +29,7 @@ const reset = () => (statements.length = 0);
 
 let bare: DbAdapter; //  the driver itself: introspecting through it is not counted
 let db: DbAdapter; //    the same, with every statement recorded
-const options = () => ({ db, schemas: ["api"], anonymousRole: "anon" });
+const options = () => ({ adapter: db, schemas: ["api"], anonymousRole: "anon" });
 
 beforeAll(async () => {
   const pglite = new PGlite();
@@ -86,7 +86,7 @@ describe("createQuery without a descriptor", () => {
       },
       transaction: (fn) => db.transaction(fn),
     };
-    const api = createQuery({ ...options(), db: flaky });
+    const api = createQuery({ ...options(), adapter: flaky });
 
     const failed = await api.select({ table: "books", columns: ["title"] });
     expect(failed.error?.kind).toBe("internal");
@@ -111,7 +111,7 @@ describe("createQuery without a descriptor", () => {
 
   test("a descriptor still means no read at all", async () => {
     reset();
-    const cache = await introspect({ db: bare, schemas: ["api"] }); // through the uncounted adapter
+    const cache = await introspect({ adapter: bare, schemas: ["api"] }); // through the uncounted adapter
     const api = createQuery({ ...options(), schema: toDescriptor(cache) });
     expect((await api.select({ table: "books", columns: ["title"] })).error).toBeNull();
     await api.ready(); // it has its schema: there is nothing to wait for

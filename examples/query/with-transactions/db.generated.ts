@@ -23,7 +23,7 @@ type DatabasePgRestApiRelations = {
     updatable: true;
     deletable: true;
     rel: {
-      ledger: { rel: "ledger"; to: "many"; ambiguous: true; hints: ["ledger_payer_fkey", "ledger_payee_fkey"] };
+      ledger: { rel: "ledger"; to: "many"; ambiguous: true; hints: ["ledger_payee_fkey", "ledger_payer_fkey"] };
     };
   };
   ledger: {
@@ -55,7 +55,7 @@ type DatabasePgRestApiRelations = {
     updatable: true;
     deletable: true;
     rel: {
-      accounts: { rel: "accounts"; to: "one"; ambiguous: true; hints: ["ledger_payer_fkey", "ledger_payee_fkey"] };
+      accounts: { rel: "accounts"; to: "one"; ambiguous: true; hints: ["ledger_payee_fkey", "ledger_payer_fkey"] };
       payee: { rel: "accounts"; to: "one" };
       payer: { rel: "accounts"; to: "one" };
     };
@@ -202,11 +202,11 @@ export const schema: SchemaDescriptor = {
   ],
   "foreignKeys": [
     {
-      "name": "ledger_payer_fkey",
+      "name": "ledger_payee_fkey",
       "schema": "api",
       "table": "ledger",
       "cols": [
-        "payer"
+        "payee"
       ],
       "fschema": "api",
       "ftable": "accounts",
@@ -215,11 +215,11 @@ export const schema: SchemaDescriptor = {
       ]
     },
     {
-      "name": "ledger_payee_fkey",
+      "name": "ledger_payer_fkey",
       "schema": "api",
       "table": "ledger",
       "cols": [
-        "payee"
+        "payer"
       ],
       "fschema": "api",
       "ftable": "accounts",

@@ -19,7 +19,7 @@ const session = (sql: BunSqlLike): DbSession => ({
  * ```ts
  * import { SQL } from "bun";
  * const sql = new SQL(process.env.DATABASE_URL!);
- * const api = await createPgRest({ db: bunSqlAdapter(sql), schemas: ["api"] });
+ * const api = await createPgRest({ adapter: bunSqlAdapter(sql), schemas: ["api"] });
  * ```
  */
 export const bunSqlAdapter = (sql: BunSqlLike & { close?(): Promise<void> }): DbAdapter => ({

@@ -9,7 +9,7 @@ const db = new PGlite();
 await db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
 
 const pgRest = await createRest({
-  db: pgliteAdapter(db),
+  adapter: pgliteAdapter(db),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {
@@ -25,7 +25,6 @@ console.log(`pg-rest (PGlite) listening on http://localhost:${port}`);
 
 process.on("SIGINT", async () => {
   server.close();
-  await pgRest.close();
-  await db.close();
+  await pgRest.close(); // closes PGlite too: `onClose: () => {}` is how to keep it open
   process.exit(0);
 });

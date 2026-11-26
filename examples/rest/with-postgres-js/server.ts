@@ -6,7 +6,7 @@ import { postgresJsAdapter } from "@tspg/rest/adapters/postgres-js";
 const sql = postgres(process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres");
 
 const pgRest = await createRest({
-  db: postgresJsAdapter(sql),
+  adapter: postgresJsAdapter(sql),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {
@@ -22,7 +22,6 @@ console.log(`pg-rest (postgres.js) listening on http://localhost:${port}`);
 
 process.on("SIGINT", async () => {
   server.close();
-  await pgRest.close();
-  await sql.end();
+  await pgRest.close(); // closes the driver too (sql.end()): `onClose: () => {}` keeps it open
   process.exit(0);
 });

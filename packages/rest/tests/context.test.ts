@@ -136,7 +136,9 @@ describe.skipIf(!hasDb)("request context (the library's replacement for JWT)", (
     const { createRest } = await import("../src/index");
     const probe = await makeApi();
     try {
-      await expect(createRest({ db: probe.db.adapter, schemas: ["pg_catalog"] })).rejects.toThrow(/cannot be exposed/);
+      await expect(createRest({ adapter: probe.db.adapter, schemas: ["pg_catalog"] })).rejects.toThrow(
+        /cannot be exposed/,
+      );
     } finally {
       await probe.close();
     }
@@ -159,7 +161,7 @@ describe.skipIf(!hasDb)("request context (the library's replacement for JWT)", (
       query: (s: string, p?: any) => (broken ? down.query() : t!.db.adapter.query(s, p)),
       transaction: (fn: any) => (broken ? down.transaction() : t!.db.adapter.transaction(fn)),
     };
-    const api = await createRest({ db: flaky as any, schemas: ["api"] });
+    const api = await createRest({ adapter: flaky as any, schemas: ["api"] });
     broken = true;
     const res = await api.handle(new Request("http://x/clients"));
     expect(res.status).toBe(503);

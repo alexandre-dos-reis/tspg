@@ -19,7 +19,7 @@ beforeAll(async () => {
     );
     CREATE VIEW api.totals AS SELECT order_id, sum(qty)::int AS total FROM api.lines GROUP BY order_id;
   `);
-  cache = await introspect({ db: pgliteAdapter(pg), schemas: ["api"] });
+  cache = await introspect({ adapter: pgliteAdapter(pg), schemas: ["api"] });
 });
 
 afterAll(() => pg.close());
@@ -37,7 +37,7 @@ describe("introspect", () => {
   });
 
   test("the schemas default to public", async () => {
-    const c = await introspect({ db: pgliteAdapter(pg) });
+    const c = await introspect({ adapter: pgliteAdapter(pg) });
     expect([...c.schemas]).toEqual(["public"]);
   });
 

@@ -26,7 +26,7 @@ export type { DbAdapter, DbSession, Row } from "@tspg/adapters";
 /** What {@link introspect} reads the catalog through. */
 export interface IntrospectOptions {
   /** A driver adapter: `@tspg/introspect/adapters/node-postgres`, `…/pglite`, `…/postgres-js`, `…/bun`. */
-  readonly db: DbSession;
+  readonly adapter: DbSession;
   /** The schemas to read. Default `["public"]`. */
   readonly schemas?: ReadonlyArray<string> | undefined;
 }
@@ -40,8 +40,8 @@ export interface IntrospectOptions {
  * ```ts
  * import { introspect } from "@tspg/introspect";
  * import { nodePostgresAdapter } from "@tspg/introspect/adapters/node-postgres";
- * const cache = await introspect({ db: nodePostgresAdapter(pool), schemas: ["api"] });
+ * const cache = await introspect({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
  * ```
  */
 export const introspect = (options: IntrospectOptions): Promise<SchemaCache> =>
-  readCatalog(options.db, options.schemas?.length ? options.schemas : ["public"]);
+  readCatalog(options.adapter, options.schemas?.length ? options.schemas : ["public"]);

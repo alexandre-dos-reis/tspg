@@ -8,7 +8,7 @@ const pool = new pg.Pool({
 });
 
 const pgRest = await createRest({
-  db: nodePostgresAdapter(pool),
+  adapter: nodePostgresAdapter(pool),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {
@@ -24,7 +24,6 @@ console.log(`pg-rest (node-postgres) listening on http://localhost:${port}`);
 
 process.on("SIGINT", async () => {
   server.close();
-  await pgRest.close();
-  await pool.end();
+  await pgRest.close(); // the pool is this handler's, so close() ends it: no pool.end() beside it
   process.exit(0);
 });

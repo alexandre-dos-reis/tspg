@@ -21,7 +21,7 @@ const session = (c: PgClientLike): DbSession => ({
  * ```ts
  * import pg from "pg";
  * const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
- * const api = await createPgRest({ db: nodePostgresAdapter(pool), schemas: ["api"] });
+ * const api = await createPgRest({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
  * ```
  */
 export const nodePostgresAdapter = (pool: PgPoolLike): DbAdapter => ({

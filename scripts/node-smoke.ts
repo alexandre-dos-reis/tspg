@@ -29,8 +29,10 @@ for (const p of [pool, adminPool]) p.on("error", () => {});
 try {
   await pool.query(readFileSync(new URL("../tests/support/fixture.sql", import.meta.url), "utf8"));
   const options = {
-    db: nodePostgresAdapter(pool as never),
+    adapter: nodePostgresAdapter(pool as never),
     schemas: ["api"],
+    // two instances over one pool, and the script ends it itself in `finally`
+    onClose: () => {},
     resolveContext: (req: Request) => {
       const sub = req.headers.get("x-user");
       return sub ? { role: "authenticated", claims: { sub } } : undefined;

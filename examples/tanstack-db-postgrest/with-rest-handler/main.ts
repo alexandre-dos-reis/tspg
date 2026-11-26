@@ -12,7 +12,7 @@ import { collections } from "./db.generated.ts";
 const pglite = new PGlite();
 await pglite.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
 const pgRest = await createRest({
-  db: pgliteAdapter(pglite),
+  adapter: pgliteAdapter(pglite),
   schemas: ["api"],
   anonymousRole: "anon",
   // no JWT here: whoever `X-User` says is `authenticated`, anyone else is `anon` (read-only)
@@ -77,5 +77,4 @@ browser.hydrate(state);
 const hydrated = browser.collection(collections({ url: "/api", fetch: counting }).api.todos);
 console.log("hydrated:", hydrated.toArray.map((t) => t.title).join(", "), `(${calls.length - preloaded} request made by the browser)`);
 
-await pgRest.close();
-await pglite.close();
+await pgRest.close(); // closes PGlite too: `onClose: () => {}` is how to keep it open

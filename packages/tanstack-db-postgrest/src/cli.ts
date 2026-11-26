@@ -125,7 +125,7 @@ export const runCli = async (argv: ReadonlyArray<string>, io: Io = nodeIo()): Pr
       .map((s) => s.trim())
       .filter(Boolean);
     const module = await generate(
-      { db, schemas },
+      { adapter: db, schemas },
       {
         ...(values.name !== undefined ? { name: values.name } : {}),
         ...(values["keys-name"] !== undefined ? { keysName: values["keys-name"] } : {}),

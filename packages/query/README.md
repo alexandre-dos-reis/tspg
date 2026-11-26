@@ -23,7 +23,7 @@ import type { Database } from "./db.generated"; // written at build time: see be
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 // the driver, the schemas to expose, and the generated type: nothing else is needed
-const db = createQuery<Database>({ db: nodePostgresAdapter(pool), schemas: ["api"] });
+const db = createQuery<Database>({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
 
 const { data, error } = await db.select(
   {
@@ -66,7 +66,7 @@ again after a migration and commit the file, like any other generated artefact:
 ```ts
 import { generateTypes } from "@tspg/query/types";
 
-// options is what createQuery takes: { db: nodePostgresAdapter(pool), schemas: ["api"] }
+// options is what createQuery takes: { adapter: nodePostgresAdapter(pool), schemas: ["api"] }
 writeFileSync("src/db.generated.ts", await generateTypes(options, { name: "Database" }));
 ```
 
@@ -81,7 +81,7 @@ start on a serverless runtime wants:
 ```ts
 import { schema, type Database } from "./db.generated";
 
-const db = createQuery<Database>({ db: nodePostgresAdapter(pool), schema });
+const db = createQuery<Database>({ adapter: nodePostgresAdapter(pool), schema });
 ```
 
 ## Documentation

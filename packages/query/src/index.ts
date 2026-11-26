@@ -213,7 +213,12 @@ export interface QueryInstance extends Operations<"result", [ctx?: RequestContex
    * It is also what {@link QueryInstance.prepare} needs, since planning is synchronous.
    */
   ready(): Promise<void>;
-  /** Stop the instance. The database adapter is left open: close it yourself. */
+  /**
+   * Stop the instance and close the database adapter -- `pool.end()`, `sql.end()`, `pglite.close()`,
+   * whichever the adapter has. Pass `onClose` to {@link createQuery} to take that over: a driver
+   * shared with another instance, or one whose lifecycle is the application's, wants
+   * `onClose: () => {}`. Calling it twice closes once.
+   */
   close(): Promise<void>;
 }
 
@@ -241,7 +246,7 @@ const create = (options: QueryOptions): QueryInstance => {
     ctx?: RequestContext,
   ): Promise<QueryResult<T>> => {
     try {
-      return (await runQuery({ db: adapter, config, cache: await cacheOf() }, input, ctx ?? {})) as QueryResult<T>;
+      return (await runQuery({ adapter, config, cache: await cacheOf() }, input, ctx ?? {})) as QueryResult<T>;
     } catch (e) {
       // runQuery does not throw; this covers everything around it (reading the catalog included, on
       // an instance with no descriptor), so the promise cannot reject
@@ -254,7 +259,7 @@ const create = (options: QueryOptions): QueryInstance => {
     scope?: TransactionOptions,
   ): Promise<QueryResult<A, undefined>> => {
     try {
-      return await runTransaction<A>({ db: adapter, config, cache: await cacheOf() }, fn, scope);
+      return await runTransaction<A>({ adapter, config, cache: await cacheOf() }, fn, scope);
     } catch (e) {
       // runTransaction does not throw; this covers everything around it, so the promise cannot reject
       return failedTransaction(e) as QueryResult<A, undefined>;
@@ -313,7 +318,7 @@ const create = (options: QueryOptions): QueryInstance => {
     // Planning is synchronous and needs the schema, which an instance with no descriptor only has
     // once it has read the catalog: `await instance.ready()` is how that happens before this point.
     const cache = given ?? engine.store.current();
-    return prepareQuery({ db: adapter, config, cache }, build) as (args: A) => Prepared<T>;
+    return prepareQuery({ adapter, config, cache }, build) as (args: A) => Prepared<T>;
   };
 
   return {
@@ -323,7 +328,7 @@ const create = (options: QueryOptions): QueryInstance => {
     setContextQuery,
     transaction,
     ready: async () => void (await cacheOf()),
-    close: async () => {},
+    close: engine.close,
   };
 };
 

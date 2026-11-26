@@ -1563,7 +1563,7 @@ export const runTransaction = async <A>(
   for (let attempt = 1; ; attempt++) {
     const again = (code: string): boolean => attempt < attempts && replayable.has(code);
     try {
-      return await env.db.transaction(async (session: DbSession) => {
+      return await env.adapter.transaction(async (session: DbSession) => {
         const scoped: Env = { ...env, session };
         if (mode) await session.query(`SET TRANSACTION ${mode}`);
         const setup = transactionSetup(scoped, ctx);
