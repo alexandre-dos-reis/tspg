@@ -143,8 +143,10 @@ describe.skipIf(!hasDb)("reads", () => {
     test("count=planned and estimated", async () => {
       const p = await t.get("/clients", { headers: { Prefer: "count=planned" } });
       expect(p.headers.get("content-range")).toMatch(/^0-2\/\d+$/);
+      // with no max-rows, PostgREST's estimate is the larger of the exact and the planned count
       const e = await t.get("/clients?limit=1", { headers: { Prefer: "count=estimated" } });
-      expect(e.headers.get("content-range")).toBe("0-0/3");
+      const [, total] = /^0-0\/(\d+)$/.exec(e.headers.get("content-range") ?? "") ?? [];
+      expect(Number(total)).toBeGreaterThanOrEqual(3);
     });
     test("maxRows caps results", async () => {
       const capped = await makeApi({ maxRows: 2 });

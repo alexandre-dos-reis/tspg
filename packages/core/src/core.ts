@@ -246,8 +246,14 @@ const effectivePaging = (env: SqlEnv, query: ParsedQuery, range: { offset: numbe
       null,
     );
   }
-  let limit = query.root.limit ?? range?.limit;
-  const offset = query.root.offset ?? range?.offset ?? 0;
+  // PostgREST pages by the intersection of what the query string and the `Range` header ask for
+  const qFrom = query.root.offset ?? 0;
+  const qTo = query.root.limit === undefined ? Infinity : qFrom + query.root.limit;
+  const hFrom = range?.offset ?? 0;
+  const hTo = range?.limit === undefined ? Infinity : hFrom + range.limit;
+  const offset = Math.max(qFrom, hFrom);
+  const to = Math.min(qTo, hTo);
+  let limit = to === Infinity ? undefined : Math.max(0, to - offset);
   const max = env.config.maxRows;
   if (max !== undefined) limit = limit === undefined ? max : Math.min(limit, max);
   return { limit, offset };
@@ -896,13 +902,15 @@ const totalOf = (env: SqlEnv, prefer: SqlPreferences, plan: SqlPlan, r: RawResul
   if (prefer.count === "exact") total = plan.countInStatement ? r.total : r.rows;
   else if (prefer.count === "planned") total = r.planned;
   else if (prefer.count === "estimated") {
+    // PostgREST (`readTotal`): the exact count, unless it is above `max-rows` -- and with no
+    // `max-rows` every count is above it (`Just n > Nothing`) -- in which case the larger of the exact
+    // and the planned count.
     const max = env.config.maxRows;
+    const exact = plan.countInStatement ? r.total : r.rows;
     total =
-      max !== undefined && r.planned !== undefined && r.planned > max
-        ? r.planned
-        : plan.countInStatement
-          ? r.total
-          : r.rows;
+      exact !== undefined && (max === undefined || exact > max) && r.planned !== undefined
+        ? Math.max(exact, r.planned)
+        : exact;
   }
   const pagedRead =
     plan.kind === "read" || (plan.pagedRead !== undefined && (plan.shape === "array" || plan.shape === "object"));

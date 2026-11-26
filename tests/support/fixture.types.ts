@@ -290,7 +290,7 @@ type DatabasePgRestApiRelations = {
     insert: never;
     update: never;
     defaults: never;
-    pk: [];
+    pk: ["id"];
     insertable: false;
     updatable: false;
     deletable: false;

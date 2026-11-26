@@ -90,7 +90,8 @@ export const splitTopLevel = (s: string, sep: string, literal = false): string[]
 export const unquote = (s: string): string => {
   const t = s.trim();
   if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
-    return t.slice(1, -1).replace(/\\(["\\])/g, "$1");
+    // inside quotes a backslash escapes whatever follows it, as in PostgREST's `pQuotedValue`
+    return t.slice(1, -1).replace(/\\([\s\S])/g, "$1");
   }
   return t;
 };

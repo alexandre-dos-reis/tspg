@@ -224,6 +224,22 @@ export const bareKeys = (search: string): Set<string> => {
   return out;
 };
 
+/** Whether an insert into this table has something to resolve a conflict on: `on_conflict=`, or a primary key. */
+const hasConflictTarget = (env: HttpEnv, schema: string, name: string, qp: SqlQueryParams): boolean => {
+  let rel;
+  try {
+    rel = getRelation(env.cache, schema, name);
+  } catch {
+    return true; // the table's own error is the planner's to report
+  }
+  if (rel.pk.length > 0) return true;
+  try {
+    return (qp.parse({ allowFilterKey: () => false }).onConflict?.length ?? 0) > 0;
+  } catch {
+    return true;
+  }
+};
+
 const readSchema = (env: HttpEnv, request: Request, method: Method): string =>
   useSchema(
     env,
@@ -241,7 +257,7 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
   const url = new URL(request.url);
   const target = parseTarget(url.pathname, env.config.basePath);
   const schema = readSchema(env, request, method);
-  const prefer = parsePrefer(request.headers.get("prefer"));
+  let prefer = parsePrefer(request.headers.get("prefer"));
   const invalid = [...prefer.invalid];
   const honoredTx = env.config.allowTxOverride;
   if (prefer.tx && !honoredTx) invalid.push(`tx=${prefer.tx}`);
@@ -327,6 +343,12 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
       qp.parse();
     } catch (e) {
       if (e instanceof EngineError && e.reason === "invalid_input") throw e;
+    }
+    // PostgREST ignores a resolution it has nothing to resolve on -- no `on_conflict=`, no primary key --
+    // inserts, and does not report it as applied
+    if (method === "POST" && prefer.resolution && !hasConflictTarget(env, schema, target.name, qp)) {
+      const { resolution: _ignored, ...rest } = prefer;
+      prefer = rest;
     }
     plan = planTable(env, operationOf(method), schema, target.name, qp, prefer, engineFormat, range, body);
   } else {

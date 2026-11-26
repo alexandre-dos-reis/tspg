@@ -560,25 +560,26 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     colsByRel.set(key, list);
   }
 
-  // The primary key of a view: the one of the table behind it, named in the view's own columns, when
-  // the view exposes every column of that key. A view has no `pg_constraint` row of its own, so
-  // without this it has no key at all -- and a key is what tells a single row from a set of one.
-  // Same exclusion as for nullability: an outer join can leave a key column null.
+  // The primary key of a view, as PostgREST's schema cache reads it (`addViewPrimaryKeys`): the
+  // primary key columns of every table behind it that the view exposes, named as the view names
+  // them. A view has no `pg_constraint` row of its own, so without this it has no key at all -- and a
+  // key is what `Location`, `PUT` and an upsert's conflict target are made of.
   const viewPk = (key: string): string[] | undefined => {
-    if (outerJoinViews.has(key)) return undefined;
-    // base table column -> the view column reading it, for this view only
+    // base table column -> the view column reading it, for this view only (the first one)
     const exposed = new Map<string, string>();
     for (const col of colsByRel.get(key) ?? []) {
       const src = col.source;
-      if (src) exposed.set(`${relKey(src.schema, src.table)}.${src.column}`, col.name);
+      const at = src ? `${relKey(src.schema, src.table)}.${src.column}` : undefined;
+      if (at && !exposed.has(at)) exposed.set(at, col.name);
     }
+    const names: string[] = [];
     for (const tableKey of new Set([...exposed.keys()].map((k) => k.slice(0, k.lastIndexOf("."))))) {
-      const cols = pk.get(tableKey);
-      if (!cols?.length) continue;
-      const names = cols.map((c) => exposed.get(`${tableKey}.${c}`));
-      if (names.every((n) => n !== undefined)) return names as string[];
+      for (const c of pk.get(tableKey) ?? []) {
+        const n = exposed.get(`${tableKey}.${c}`);
+        if (n !== undefined && !names.includes(n)) names.push(n);
+      }
     }
-    return undefined;
+    return names.length ? names : undefined;
   };
 
   const relations = new Map<string, Relation>();

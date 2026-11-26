@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 211 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 202 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -224,7 +224,7 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /supervisors?select=name,process_supervisor(...processes(...process_costs(cost.sum()),...process_categories(name)))": "an aggregate in a spread embed",
   "GET /supervisors?select=name,process_supervisor(...processes(...process_costs(cost_sum:cost.sum()),...process_categories(category:name)))": "an aggregate in a spread embed",
 
-  // ── a filter on an embed selected with no columns (12) ──
+  // ── a filter on an embed selected with no columns (13) ──
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null)": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=exact\"}": "a filter on an embed selected with no columns",
@@ -236,6 +236,7 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /process_supervisor?select=supervisor_id,...processes(...process_costs(count()))&order=supervisor_id": "a filter on an embed selected with no columns",
   "GET /process_supervisor?select=supervisor_id,...processes(count())&order=supervisor_id": "a filter on an embed selected with no columns",
   "GET /process_supervisor?select=supervisor_id,...processes(processes_count:count())&order=supervisor_id": "a filter on an embed selected with no columns",
+  "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
 
   // ── an overloaded function (8) ──
@@ -288,12 +289,6 @@ export const KNOWN: Record<string, Cluster> = {
   "POST /rpc/returns_setof_record +{\"Prefer\":\"tx=rollback\"} <>": "a function returning record",
   "POST /rpc/returns_setof_record_params +{\"Prefer\":\"tx=rollback\"} <{\"id\":1,\"name\":\"Windows%\"}>": "a function returning record",
 
-  // ── a table without a usable primary key (4) ──
-  "POST /no_pk +{\"Content-Type\":\"text/csv\",\"Accept\":\"text/csv\",\"Prefer\":\"return=representation, tx=rollback\"} <a,b NULL,foo>": "a table without a usable primary key",
-  "POST /no_pk +{\"Content-Type\":\"text/csv\",\"Prefer\":\"tx=rollback\"} <a,b foo,bar baz>": "a table without a usable primary key",
-  "POST /no_pk +{\"Prefer\":\"return=representation, resolution=merge-duplicates, tx=rollback\"} <[ { \"a\": \"1\", \"b\": \"0\" } ]>": "a table without a usable primary key",
-  "POST /test_null_pk_competitors_sponsors +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"id\":1}>": "a table without a usable primary key",
-
   // ── an argument of a character type (4) ──
   "GET /rpc/bit_param_select?bit_=101010&bit_arr={101,101010}": "an argument of a character type",
   "GET /rpc/char_param_select?char_=abcdefg&char_arr={abc,abcdefg}": "an argument of a character type",
@@ -328,26 +323,9 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /bad_subquery": "the status of an error",
   "GET /rpc/raise_bad_pt": "the status of an error",
 
-  // ── CSV (1) ──
-  "GET / +{\"Accept\":\"text/csv\"}": "CSV",
-
-  // ── a Range header beside limit= (1) ──
-  "GET /items?select=id&order=id.asc&limit=3 +{\"Range-Unit\":\"items\",\"Range\":\"0-1\"}": "a Range header beside limit=",
-
-  // ── a backslash in an in-list value (1) ──
-  "GET /w_or_wo_comma_names?name=in.(\"D\\a\\vid W\\h\\ite\")": "a backslash in an in-list value",
-
-  // ── the Location header of a composite primary key (1) ──
-  "POST /with_multiple_pks +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"pk1\":1,\"pk2\":2}>": "the Location header of a composite primary key",
-
   // ── the OpenAPI document (1) ──
   "GET /": "the OpenAPI document",
 
-  // ── the total of a filtered request (1) ──
-  "GET /projects?select=name,clients(name)&clients=not.is.null +{\"Prefer\":\"count=estimated\"}": "the total of a filtered request",
-
-  // ── whitespace in a logic tree (1) ──
-  "GET /entities?and=( and ( id.in.( 1, 2, 3 ) , id.eq.3 ) , or ( id.eq.2 , id.eq.3 ) )&select=id": "whitespace in a logic tree",
 };
 
 /**

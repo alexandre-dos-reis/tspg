@@ -244,6 +244,10 @@ export const parseAccept = (
         if (isRoot) return { kind: "openapi" };
         if (type !== "application/openapi+json") return { kind: "json", stripNulls };
         break;
+    }
+    // the root serves its OpenAPI document and nothing else
+    if (isRoot) continue;
+    switch (type) {
       case "application/vnd.pgrst.array+json":
         return { kind: "json", stripNulls };
       case "application/vnd.pgrst.object+json":
@@ -252,8 +256,7 @@ export const parseAccept = (
       case "text/csv":
         return { kind: "csv" };
       case "application/geo+json":
-        if (!isRoot) return { kind: "geojson" };
-        break;
+        return { kind: "geojson" };
     }
   }
   throw new PgRestError(
@@ -347,7 +350,10 @@ export const parseCsv = (text: string): Array<Record<string, string | null>> => 
   const [header, ...data] = rows;
   if (!header) return [];
   if (header.some((h) => h === "")) throw parseError("Invalid CSV", "the header row has an empty column name");
-  return data
-    .filter((r) => !(r.length === 1 && r[0] === ""))
-    .map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] === "" || r[i] === undefined ? null : r[i]!])));
+  const lines = data.filter((r) => !(r.length === 1 && r[0] === ""));
+  if (lines.some((r) => r.length !== header.length)) {
+    throw new PgRestError(400, "PGRST102", "All lines must have same number of fields");
+  }
+  // PostgREST reads the text `NULL` as a null
+  return lines.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] === "" || r[i] === "NULL" ? null : r[i]!])));
 };

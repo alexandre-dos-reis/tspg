@@ -111,7 +111,8 @@ export const parseOperatorExpr = (field: FieldRef, expr: string, unquoteValue = 
 
 const parseLogicItem = (raw: string): FilterNode => {
   const item = raw.trim();
-  const m = /^(not\.)?(and|or)\(/.exec(item);
+  // PostgREST allows spaces between the operator and its parenthesis
+  const m = /^(not\.)?(and|or)\s*\(/.exec(item);
   if (m) {
     if (!item.endsWith(")")) throw parseError("Unbalanced parentheses in logic tree", `in "${item}"`);
     const inner = item.slice(m[0].length - 1); // keep "(...)"

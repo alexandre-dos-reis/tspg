@@ -121,7 +121,13 @@ export const buildOutcome = (
         const rows = JSON.parse(r.body || "[]") as Array<Record<string, unknown>>;
         const pk = plan.rel?.pk ?? [];
         if (rows.length === 1 && pk.length > 0) {
-          const q = pk.map((c) => `${encodeURIComponent(c)}=eq.${encodeURIComponent(String(rows[0]![c]))}`).join("&");
+          // a key column the row left null is named as PostgREST names it: `is.null`
+          const q = pk
+            .map((c) => {
+              const v = rows[0]![c];
+              return `${encodeURIComponent(c)}=${v === null || v === undefined ? "is.null" : `eq.${encodeURIComponent(String(v))}`}`;
+            })
+            .join("&");
           headers["Location"] = `/${encodeURIComponent(plan.rel!.name)}?${q}`;
         }
       }
