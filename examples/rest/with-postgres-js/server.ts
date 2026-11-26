@@ -6,7 +6,7 @@ import { postgresJsAdapter } from "@tspg/rest/adapters/postgres-js";
 const sql = postgres(process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres");
 
 const pgRest = await createRest({
-  db: postgresJsAdapter(sql),
+  adapter: postgresJsAdapter(sql),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {

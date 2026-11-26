@@ -11,7 +11,7 @@ import { introspect as readCatalog } from "@tspg/core/schema";
  * the catalog through the options the instance is created from, so the two cannot name different
  * schemas.
  */
-export type IntrospectOptions = Pick<QueryOptions, "db" | "schemas">;
+export type IntrospectOptions = Pick<QueryOptions, "adapter" | "schemas">;
 
 /**
  * Read the catalog and build the {@link SchemaCache} the generators below turn into a module.
@@ -27,7 +27,7 @@ export type IntrospectOptions = Pick<QueryOptions, "db" | "schemas">;
  * `schemas` defaults to `["public"]`, as it does for `createQuery`.
  */
 export const introspect = (options: IntrospectOptions): Promise<SchemaCache> =>
-  readCatalog(options.db, options.schemas?.length ? options.schemas : ["public"]);
+  readCatalog(options.adapter, options.schemas?.length ? options.schemas : ["public"]);
 
 /**
  * What a generator reads: `createQuery`'s options, and it reads the catalog itself -- or a
@@ -35,7 +35,8 @@ export const introspect = (options: IntrospectOptions): Promise<SchemaCache> =>
  */
 export type GenerateSource = IntrospectOptions | SchemaCache;
 
-const cacheOf = async (source: GenerateSource): Promise<SchemaCache> => ("db" in source ? introspect(source) : source);
+const cacheOf = async (source: GenerateSource): Promise<SchemaCache> =>
+  "adapter" in source ? introspect(source) : source;
 
 /**
  * Generate TypeScript types from an introspected schema, as the text of a module.
@@ -45,7 +46,7 @@ const cacheOf = async (source: GenerateSource): Promise<SchemaCache> => ("db" in
  * in version control:
  *
  * ```ts
- * writeFileSync("src/db.generated.ts", await generateModule({ db, schemas: ["api"] }));
+ * writeFileSync("src/db.generated.ts", await generateModule({ adapter, schemas: ["api"] }));
  * ```
  */
 export interface GenerateTypesOptions {

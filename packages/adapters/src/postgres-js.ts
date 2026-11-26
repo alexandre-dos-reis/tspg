@@ -24,7 +24,7 @@ const session = (sql: PostgresJsQueryable): DbSession => ({
  * ```ts
  * import postgres from "postgres";
  * const sql = postgres(process.env.DATABASE_URL!);
- * const api = await createPgRest({ db: postgresJsAdapter(sql), schemas: ["api"] });
+ * const api = await createPgRest({ adapter: postgresJsAdapter(sql), schemas: ["api"] });
  * ```
  */
 export const postgresJsAdapter = (sql: PostgresJsLike): DbAdapter => ({

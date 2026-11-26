@@ -21,7 +21,7 @@ const pool = new pg.Pool({ connectionString: url.toString() });
 try {
   await pool.query(readFileSync(new URL("../tests/support/fixture.sql", import.meta.url), "utf8"));
   const options = {
-    db: nodePostgresAdapter(pool as never),
+    adapter: nodePostgresAdapter(pool as never),
     schemas: ["api"],
     // two instances over one pool, and the script ends it itself in `finally`
     onClose: () => {},

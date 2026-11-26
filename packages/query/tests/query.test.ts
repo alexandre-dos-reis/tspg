@@ -510,7 +510,7 @@ describe.skipIf(!hasDb)("query()", () => {
       let broken = false;
       // a driver that fails with something that is not even an Error, after the schema was read
       const api = createQuery({
-        db: {
+        adapter: {
           query: (text, params) => db.adapter.query(text, params),
           transaction: (fn) => (broken ? Promise.reject("boom") : db.adapter.transaction(fn)),
         },

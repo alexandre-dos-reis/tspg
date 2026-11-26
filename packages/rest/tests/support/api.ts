@@ -38,7 +38,7 @@ export const makeApi = async (options: Partial<RestOptions> = {}): Promise<TestA
   const db = await createTestDb();
   // The driver belongs to the harness: `close()` would end it by default, and `db.drop()` is what
   // closes it here.
-  const api = await createRest({ db: db.adapter, schemas: ["api", "v2"], onClose: () => {}, ...options });
+  const api = await createRest({ adapter: db.adapter, schemas: ["api", "v2"], onClose: () => {}, ...options });
 
   const call = async (method: string, path: string, opts: CallOptions = {}): Promise<Reply> => {
     const headers: Record<string, string> = { ...opts.headers };

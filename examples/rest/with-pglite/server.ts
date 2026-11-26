@@ -9,7 +9,7 @@ const db = new PGlite();
 await db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
 
 const pgRest = await createRest({
-  db: pgliteAdapter(db),
+  adapter: pgliteAdapter(db),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {

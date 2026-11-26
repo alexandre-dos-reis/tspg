@@ -19,7 +19,7 @@ describe.skipIf(!hasDb)("prepared queries", () => {
       query: (t: string, p?: unknown[]) => (sent.push({ text: t, params: p }), s.query(t, p)),
     });
     q = createQuery({
-      db: { ...db.adapter, transaction: (fn: any) => db.adapter.transaction((s: any) => fn(spy(s))) } as never,
+      adapter: { ...db.adapter, transaction: (fn: any) => db.adapter.transaction((s: any) => fn(spy(s))) } as never,
       schema,
     });
   });
@@ -204,7 +204,7 @@ describe.skipIf(!hasDb)("values are bound, not written into the SQL", () => {
       query: (t: string, p?: unknown[]) => (sent.push({ text: t, params: p }), s.query(t, p)),
     });
     q = createQuery({
-      db: { ...db.adapter, transaction: (fn: any) => db.adapter.transaction((s: any) => fn(spy(s))) } as never,
+      adapter: { ...db.adapter, transaction: (fn: any) => db.adapter.transaction((s: any) => fn(spy(s))) } as never,
       schema,
     });
   });

@@ -43,67 +43,67 @@ const emptySchema = () =>
 
 describe("close()", () => {
   test("closes the adapter it was given", async () => {
-    const db = stub(async () => {});
-    const api = createQuery({ db, schemas: ["api"] });
-    expect(db.closed).toBe(0); // creating an instance closes nothing
+    const adapter = stub(async () => {});
+    const api = createQuery({ adapter, schemas: ["api"] });
+    expect(adapter.closed).toBe(0); // creating an instance closes nothing
     await api.close();
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 
   test("closes once, however many times it is called", async () => {
-    const db = stub(async () => {});
-    const api = createQuery({ db, schemas: ["api"] });
+    const adapter = stub(async () => {});
+    const api = createQuery({ adapter, schemas: ["api"] });
     await Promise.all([api.close(), api.close()]);
     await api.close();
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 
   test("onClose takes it over, and is handed the adapter", async () => {
-    const db = stub(async () => {});
+    const adapter = stub(async () => {});
     const seen: DbAdapter[] = [];
-    const api = createQuery({ db, schemas: ["api"], onClose: ({ driver }) => void seen.push(driver) });
+    const api = createQuery({ adapter, schemas: ["api"], onClose: ({ adapter: given }) => void seen.push(given) });
     await api.close();
-    expect(db.closed).toBe(0); // the driver is left to the caller
-    expect(seen).toEqual([db]); // the adapter as it was given, so `onClose` can close it itself
+    expect(adapter.closed).toBe(0); // the driver is left to the caller
+    expect(seen).toEqual([adapter]); // the adapter as it was given, so `onClose` can close it itself
     await api.close();
     expect(seen.length).toBe(1); // once, like the default
   });
 
   test("onClose can close the driver itself, and is awaited", async () => {
-    const db = stub(async () => {});
+    const adapter = stub(async () => {});
     let done = false;
     const api = createQuery({
-      db,
+      adapter,
       schemas: ["api"],
-      onClose: async ({ driver }) => {
-        await driver.close?.();
+      onClose: async ({ adapter: given }) => {
+        await given.close?.();
         done = true;
       },
     });
     await api.close();
-    expect([db.closed, done]).toEqual([1, true]);
+    expect([adapter.closed, done]).toEqual([1, true]);
   });
 
   test("a driver something else already closed is not an error", async () => {
     // pool.end() twice, a shutdown closing in both directions: the library is closing something it
     // did not open, so it has nothing to say about it.
-    const db = stub(async () => {
+    const adapter = stub(async () => {
       throw new Error("Called end on pool more than once");
     });
-    const api = createQuery({ db, schemas: ["api"] });
+    const api = createQuery({ adapter, schemas: ["api"] });
     await api.close(); // does not reject
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 
   test("an adapter with no close() is closed by doing nothing", async () => {
-    const db = stub();
-    expect(db.close).toBeUndefined();
-    await createQuery({ db, schemas: ["api"] }).close();
+    const adapter = stub();
+    expect(adapter.close).toBeUndefined();
+    await createQuery({ adapter, schemas: ["api"] }).close();
   });
 
   test("what onClose throws is the caller's, so it is not swallowed", async () => {
     const api = createQuery({
-      db: stub(async () => {}),
+      adapter: stub(async () => {}),
       schemas: ["api"],
       onClose: () => {
         throw new Error("my shutdown is broken");
@@ -113,9 +113,9 @@ describe("close()", () => {
   });
 
   test("an instance on a descriptor closes the same way", async () => {
-    const db = stub(async () => {});
-    const api = createQuery({ db, schema: emptySchema() });
+    const adapter = stub(async () => {});
+    const api = createQuery({ adapter, schema: emptySchema() });
     await api.close();
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 });

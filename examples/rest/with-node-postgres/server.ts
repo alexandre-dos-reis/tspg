@@ -8,7 +8,7 @@ const pool = new pg.Pool({
 });
 
 const pgRest = await createRest({
-  db: nodePostgresAdapter(pool),
+  adapter: nodePostgresAdapter(pool),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {

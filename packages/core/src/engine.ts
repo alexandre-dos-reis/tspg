@@ -11,7 +11,7 @@ export interface EngineOptions {
    * (Bun.sql, node-postgres, postgres.js, PGlite...). Closing the instance closes it, unless
    * {@link EngineOptions.onClose} says otherwise.
    */
-  readonly db: DbAdapter;
+  readonly adapter: DbAdapter;
   /** Schemas to expose. The first one is the default. Default `["public"]`. */
   readonly schemas?: ReadonlyArray<string>;
   /**
@@ -28,19 +28,19 @@ export interface EngineOptions {
    * `close()` (`pool.end()`, `sql.end()`, `pglite.close()`...), which is what a driver created for
    * this instance and nothing else wants.
    *
-   * Give it to take that over -- the adapter is handed back as `driver`, and what you do with it is
-   * the whole of what closing does:
+   * Give it to take that over -- the adapter is handed back, and what you do with it is the whole of
+   * what closing does:
    *
    * ```ts ignore
    * // one pool, two instances: whichever closes first must not end it under the other
-   * const db = nodePostgresAdapter(pool);
-   * const api = await createRest({ db, onClose: () => {} });
-   * const query = createQuery({ db });   // this one ends the pool
+   * const adapter = nodePostgresAdapter(pool);
+   * const api = await createRest({ adapter, onClose: () => {} });
+   * const query = createQuery({ adapter });   // this one ends the pool
    * ```
    *
    * It is called once, however many times `close()` is called.
    */
-  readonly onClose?: (ctx: { readonly driver: DbAdapter }) => void | Promise<void>;
+  readonly onClose?: (ctx: { readonly adapter: DbAdapter }) => void | Promise<void>;
 }
 
 /** What an instance is built on: the database, the settings both entry points read, the schema cache. */
@@ -66,7 +66,7 @@ const build = (options: EngineOptions): Pick<Engine, "adapter" | "config" | "clo
       throw new Error(`pg-rest: the schema "${s}" cannot be exposed`);
     }
   }
-  const user = options.db;
+  const user = options.adapter;
   // Driver errors are recognised by their SQLSTATE, whatever the driver, so adapters stay trivial.
   // Every statement is normalised where it is issued, and not only on the way out of a
   // transaction: inside a scope the failure is caught before it reaches that boundary.
@@ -106,7 +106,7 @@ const build = (options: EngineOptions): Pick<Engine, "adapter" | "config" | "clo
     // `onClose` is the caller's code: what it throws is theirs to see. The default is the library
     // closing something it did not open, where a driver already ended -- `pool.end()` twice, a
     // process shutting down in both directions -- is the ordinary case and not a failure.
-    if (options.onClose) return void (await options.onClose({ driver: user }));
+    if (options.onClose) return void (await options.onClose({ adapter: user }));
     try {
       await user.close?.();
     } catch {

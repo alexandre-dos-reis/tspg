@@ -12,7 +12,7 @@ await pglite.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8")
 
 // Everything createQuery takes except the schema descriptor, which gen-types.ts writes.
 export const pgRestOptions: Omit<QueryOptions, "schema"> = {
-  db: pgliteAdapter(pglite),
+  adapter: pgliteAdapter(pglite),
   anonymousRole: "anon",
   schemas: ["api"],
 };

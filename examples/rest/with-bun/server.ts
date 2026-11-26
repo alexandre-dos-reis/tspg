@@ -5,7 +5,7 @@ import { bunSqlAdapter } from "@tspg/rest/adapters/bun";
 const sql = new SQL(process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/postgres");
 
 const pgRest = await createRest({
-  db: bunSqlAdapter(sql),
+  adapter: bunSqlAdapter(sql),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {

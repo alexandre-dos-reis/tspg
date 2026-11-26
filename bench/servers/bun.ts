@@ -5,7 +5,7 @@ import { bunSqlAdapter } from "../../packages/rest/dist/adapters/bun.js";
 
 const sql = new SQL({ url: process.env.DATABASE_URL!, max: Number(process.env.POOL ?? 10) });
 const pgRest = await createRest({
-  db: bunSqlAdapter(sql),
+  adapter: bunSqlAdapter(sql),
   schemas: ["api"],
   anonymousRole: "anon",
   // cheapest possible "auth": a header. (PostgREST has to verify a JWT per request.)

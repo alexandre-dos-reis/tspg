@@ -26,7 +26,7 @@ One call, on the options `createQuery` itself takes:
 import { writeFileSync } from "node:fs";
 import { generateTypes } from "@tspg/query/types";
 
-// options is what createQuery takes: { db: nodePostgresAdapter(pool), schemas: ["api"] }
+// options is what createQuery takes: { adapter: nodePostgresAdapter(pool), schemas: ["api"] }
 writeFileSync("src/db.generated.ts", await generateTypes(options, { name: "Database" }));
 ```
 
@@ -38,7 +38,7 @@ The file exports the type `Database`, and `createQuery<Database>(options)` takes
 options object, which then reads the catalog once, on its first query.
 
 **To read the catalog never**, use `generateModule(options)`: the same types plus a **schema descriptor**, the cache as
-plain data. `createQuery<Database>({ db, schema })` runs on that descriptor and reads nothing — not at start-up, not
+plain data. `createQuery<Database>({ adapter, schema })` runs on that descriptor and reads nothing — not at start-up, not
 after — which is what a cold start on a serverless runtime, or a role without catalog permissions, wants. The descriptor
 is trusted as generated: regenerate it after a migration, since nothing checks it against the live database.
 `generateSchema(options)` writes it alone, for when the two go in different files, and `introspect(options)` gives the
@@ -134,9 +134,9 @@ Only the composite types the module actually mentions are declared, so a `noUnus
 ## A typed instance
 
 ```ts
-const pgRest = createQuery<Database>({ db: nodePostgresAdapter(pool), schema });
+const pgRest = createQuery<Database>({ adapter: nodePostgresAdapter(pool), schema });
 // without a generated descriptor, naming the schemas to expose instead:
-const live = createQuery<Database>({ db: nodePostgresAdapter(pool), schemas: ["api"] });
+const live = createQuery<Database>({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
 ```
 
 From there, `table` and `rpc` are the ones that exist, `columns`, `where` and `order` only name real columns and

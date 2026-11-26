@@ -39,41 +39,41 @@ const database = async (close?: () => Promise<void>): Promise<DbAdapter & { clos
 
 describe("close()", () => {
   test("closes the adapter it was given, once", async () => {
-    const db = await database();
-    const api = await createRest({ db, schemas: ["api"], anonymousRole: "anon" });
+    const adapter = await database();
+    const api = await createRest({ adapter, schemas: ["api"], anonymousRole: "anon" });
     expect((await api.handle(new Request("http://x/books"))).status).toBe(200);
-    expect(db.closed).toBe(0);
+    expect(adapter.closed).toBe(0);
 
     await api.close();
     await api.close();
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 
   test("onClose takes it over: the driver outlives the handler", async () => {
-    const db = await database();
+    const adapter = await database();
     const seen: DbAdapter[] = [];
     const api = await createRest({
-      db,
+      adapter,
       schemas: ["api"],
       anonymousRole: "anon",
-      onClose: ({ driver }) => void seen.push(driver),
+      onClose: ({ adapter: given }) => void seen.push(given),
     });
     await api.close();
-    expect([db.closed, seen]).toEqual([0, [db]]);
+    expect([adapter.closed, seen]).toEqual([0, [adapter]]);
 
     // the point of it: a second instance on the same driver still works
-    const other = await createRest({ db, schemas: ["api"], anonymousRole: "anon" });
+    const other = await createRest({ adapter, schemas: ["api"], anonymousRole: "anon" });
     expect((await other.handle(new Request("http://x/books"))).status).toBe(200);
     await other.close();
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 
   test("a driver something else already closed is not an error", async () => {
-    const db = await database(async () => {
+    const adapter = await database(async () => {
       throw new Error("already closed");
     });
-    const api = await createRest({ db, schemas: ["api"], anonymousRole: "anon" });
+    const api = await createRest({ adapter, schemas: ["api"], anonymousRole: "anon" });
     await api.close(); // does not reject
-    expect(db.closed).toBe(1);
+    expect(adapter.closed).toBe(1);
   });
 });

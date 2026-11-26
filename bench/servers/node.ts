@@ -6,7 +6,7 @@ import { nodePostgresAdapter } from "../../packages/rest/dist/adapters/node-post
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.POOL ?? 10) });
 const pgRest = await createRest({
-  db: nodePostgresAdapter(pool as never),
+  adapter: nodePostgresAdapter(pool as never),
   schemas: ["api"],
   anonymousRole: "anon",
   resolveContext: (req) => {
