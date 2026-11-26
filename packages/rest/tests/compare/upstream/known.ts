@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 113 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 89 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -154,48 +154,22 @@ export const KNOWN: Record<string, Cluster> = {
   // ── an ambiguous embed (1) ──
   "GET /i2459_composite_v2?select=*,i2459_composite_v1(*)": "an ambiguous embed",
 
-  // ── an aggregate in a spread embed (13) ──
-  "GET /budget_expenses?select=...budget_categories(total_budget:budget_amount.sum())": "an aggregate in a spread embed",
-  "GET /budget_expenses?select=total_expenses:expense_amount.sum(),...budget_categories(budget_owner,total_budget:budget_amount.sum())&order=budget_categories(budget_owner)": "an aggregate in a spread embed",
-  "GET /process_supervisor?select=...processes(factories(name),...process_costs(cost.sum()))": "an aggregate in a spread embed",
-  "GET /process_supervisor?select=...processes(factory:factories(name),...process_costs(cost_sum:cost.sum()))": "an aggregate in a spread embed",
-  "GET /process_supervisor?select=...processes(factory_id,...process_costs(cost.sum()))&order=processes(factory_id).desc": "an aggregate in a spread embed",
-  "GET /process_supervisor?select=...processes(factory_id,...process_costs(cost_sum:cost.sum()))&order=processes(factory_id).desc": "an aggregate in a spread embed",
-  "GET /process_supervisor?select=supervisor_id,...processes(...process_costs(cost.sum()),...process_categories(name))&order=supervisor_id": "an aggregate in a spread embed",
-  "GET /process_supervisor?select=supervisor_id,...processes(...process_costs(cost_sum:cost.sum()),...process_categories(category:name))&order=supervisor_id": "an aggregate in a spread embed",
-  "GET /processes?select=...process_costs(cost.sum()),...process_categories(name)&order=process_categories(name)": "an aggregate in a spread embed",
-  "GET /processes?select=...process_costs(cost_sum:cost.sum()),...process_categories(category:name)&order=process_categories(category)": "an aggregate in a spread embed",
-  "GET /project_invoices?select=...projects(id.count())": "an aggregate in a spread embed",
-  "GET /supervisors?select=name,process_supervisor(...processes(...process_costs(cost.sum()),...process_categories(name)))": "an aggregate in a spread embed",
-  "GET /supervisors?select=name,process_supervisor(...processes(...process_costs(cost_sum:cost.sum()),...process_categories(category:name)))": "an aggregate in a spread embed",
-
-  // ── a filter on an embed selected with no columns (13) ──
+  // ── a filter on an embed selected with no columns (6) ──
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null)": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=exact\"}": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
-  "GET /factories?select=factory:name,...processes()": "a filter on an embed selected with no columns",
-  "GET /process_supervisor?select=...processes(factory_id,...process_costs(count()))&order=processes(factory_id)": "a filter on an embed selected with no columns",
-  "GET /process_supervisor?select=...supervisors(id,count())&order=supervisors(id)": "a filter on an embed selected with no columns",
-  "GET /process_supervisor?select=supervisor:supervisor_id,...processes(...process_costs(process_costs_count:count()))&order=supervisor_id": "a filter on an embed selected with no columns",
-  "GET /process_supervisor?select=supervisor_id,...processes(...process_costs(count()))&order=supervisor_id": "a filter on an embed selected with no columns",
-  "GET /process_supervisor?select=supervisor_id,...processes(count())&order=supervisor_id": "a filter on an embed selected with no columns",
-  "GET /process_supervisor?select=supervisor_id,...processes(processes_count:count())&order=supervisor_id": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
 
-  // ── the wording of an error (3) ──
-  "GET /clients?select=*,pros:projects(*)&order=pros(id)": "the wording of an error",
+  // ── the wording of an error (2) ──
   "GET /clients?select=id,projects(id,tasks(id,name))&projects.tasks2.name=like.Design*": "the wording of an error",
   "POST /rpc/delete_items_returns_void +{\"Prefer\":\"handling=strict, max-affected=20, tx=rollback\"} <>": "the wording of an error",
 
-  // ── a filter or an order on a spread embed (7) ──
+  // ── a filter or an order on a spread embed (4) ──
   "GET /factories?select=factory:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
   "GET /factories?select=factory:name,...processes(processes:name)&processes=is.null": "a filter or an order on a spread embed",
   "GET /operators?select=operator:name,...processes(processes:name)&processes=is.null": "a filter or an order on a spread embed",
-  "GET /process_supervisor?select=...processes(factory:factory_id,...process_costs(process_costs_count:count()))&order=processes(factory)": "a filter or an order on a spread embed",
-  "GET /process_supervisor?select=...processes(factory:factory_id,processes_count:count(),...process_costs(process_costs_count:count()))&order=processes(factory)": "a filter or an order on a spread embed",
-  "GET /process_supervisor?select=...supervisors(supervisor:id,supervisor_count:count())&order=supervisors(supervisor)": "a filter or an order on a spread embed",
   "GET /supervisors?select=supervisor:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
 
   // ── OPTIONS (4) ──
