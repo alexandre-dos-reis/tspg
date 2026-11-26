@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 89 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 80 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -154,10 +154,8 @@ export const KNOWN: Record<string, Cluster> = {
   // ── an ambiguous embed (1) ──
   "GET /i2459_composite_v2?select=*,i2459_composite_v1(*)": "an ambiguous embed",
 
-  // ── a filter on an embed selected with no columns (6) ──
-  "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null)": "a filter on an embed selected with no columns",
+  // ── a filter on an embed selected with no columns (4) ──
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
-  "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=exact\"}": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
@@ -166,22 +164,11 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /clients?select=id,projects(id,tasks(id,name))&projects.tasks2.name=like.Design*": "the wording of an error",
   "POST /rpc/delete_items_returns_void +{\"Prefer\":\"handling=strict, max-affected=20, tx=rollback\"} <>": "the wording of an error",
 
-  // ── a filter or an order on a spread embed (4) ──
-  "GET /factories?select=factory:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
-  "GET /factories?select=factory:name,...processes(processes:name)&processes=is.null": "a filter or an order on a spread embed",
-  "GET /operators?select=operator:name,...processes(processes:name)&processes=is.null": "a filter or an order on a spread embed",
-  "GET /supervisors?select=supervisor:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
-
   // ── OPTIONS (4) ──
   "OPTIONS / +{\"Accept\":\"*/*\",\"Origin\":\"http://example.com\",\"Access-Control-Request-Method\":\"POST\",\"Access-Control-Request-Headers\":\"Foo,Bar\"}": "OPTIONS",
   "OPTIONS /projects_auto_updatable_view_without_pk": "OPTIONS",
   "OPTIONS /projects_view_with_all_triggers_without_pk": "OPTIONS",
   "OPTIONS /rpc/reset_table": "OPTIONS",
-
-  // ── a filter whose target is an embedded resource (3) ──
-  "GET /projects?select=name,client_id,client:client_id(name)&client_id=eq.2": "a filter whose target is an embedded resource",
-  "GET /tournaments?select=*,status(*)&status=eq.3": "a filter whose target is an embedded resource",
-  "GET /user_friend?select=*,user1(*)&user1=eq.a02fb934-3a4d-469b-a6b6-4fcd88b973cf": "a filter whose target is an embedded resource",
 
   // ── fts() on a domain over tsvector (3) ──
   "GET /rpc/get_tsearch_to_tsvector?select=text_search_domain&text_search_domain=fts(simple).impossible": "fts() on a domain over tsvector",

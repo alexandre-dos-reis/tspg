@@ -170,7 +170,9 @@ describe("query strings", () => {
     const p = q("select=id,orders(*)&orders=is.null");
     expect(p.root.presence).toEqual([{ embed: "orders", present: false }]);
     expect(q("select=id,orders(*)&orders=not.is.null").root.presence[0]!.present).toBe(true);
-    expect(code(() => q("select=id,orders(*)&orders=eq.1"))).toBe("PGRST120");
+    // anything but is.null is a filter on a column of that name, as in PostgREST (which never answers PGRST120)
+    expect(q("select=id,orders(*)&orders=eq.1").root.filters).toHaveLength(1);
+    expect(q("select=id,orders(*)&orders=eq.1").root.presence).toHaveLength(0);
   });
   test("conflict / columns params", () => {
     const p = q("on_conflict=email,id&columns=a,b");

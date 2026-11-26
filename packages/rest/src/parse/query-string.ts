@@ -251,18 +251,12 @@ export const parseQuery = (
       continue;
     }
 
-    // A filter on a column, or `embed=is.null` on an embedded resource itself.
+    // A filter on a column, or `embed=is.null` on an embedded resource itself: the embed is named as
+    // the select names it (its alias, or its target), and anything but `is.null` is a filter on a
+    // column of that name (PostgREST's `addNullEmbedFilters`).
     const embedPath = parts.join(".");
-    if (known.has(embedPath)) {
-      const m = /^(not\.)?is\.null$/.exec(value);
-      if (!m) {
-        throw new EngineError(
-          "invalid_embed_filter",
-          "Embedded resource filter only accepts is.null or not.is.null",
-          null,
-          null,
-        );
-      }
+    const m = /^(not\.)?is\.null$/.exec(value);
+    if (known.get(embedPath) === embedPath && m) {
       paramsFor(parts.slice(0, -1), key).presence.push({
         embed: known.get(embedPath)!.split(".").pop()!,
         present: Boolean(m[1]),

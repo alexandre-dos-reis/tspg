@@ -1,10 +1,10 @@
 import { EngineError } from "../errors";
-import type { NodeParams, ParsedQuery } from "../parse/filter";
+import type { FilterNode, NodeParams, ParsedQuery } from "../parse/filter";
 import { outputName, type AggregateItem, type EmbedItem, type FieldItem, type SelectItem } from "../parse/select";
 import { quoteIdent, quoteQualified } from "../quote";
 import { type Relation, type SchemaCache, resolveRelationship } from "../schema";
 import type { OrderTerm } from "../parse/filter";
-import { fieldSql, whereSql } from "./filters";
+import { fieldSql, nodeSql } from "./filters";
 import { type Values, inlined } from "./values";
 import { ALIAS, ROOT_ALIAS } from "../constants";
 
@@ -35,6 +35,8 @@ interface Join {
   /** Name (alias or target) used to match `?embed=is.null` filters. */
   readonly name: string;
   readonly inner: boolean;
+  /** Null exactly when the embed found no row: what `embed=is.null` tests. */
+  readonly presence: string;
 }
 
 /** An aggregate a to-one spread leaves to its parent: applied there, over the column the spread selects. */
@@ -227,19 +229,46 @@ const buildItems = (
   return { cols, joins, groupBy, aggregated, hoisted };
 };
 
+const notEmbedded = (name: string) =>
+  new EngineError(
+    "not_embedded",
+    `'${name}' is not an embedded resource in this request`,
+    null,
+    `Verify that '${name}' is included in the 'select' query parameter.`,
+  );
+
 const presenceConditions = (params: NodeParams | undefined, joins: ReadonlyArray<Join>): string[] =>
   (params?.presence ?? []).map((p) => {
     const j = joins.find((x) => x.name === p.embed);
-    if (!j) {
-      throw new EngineError(
-        "not_embedded",
-        `'${p.embed}' is not an embedded resource in this request`,
-        null,
-        `Verify that '${p.embed}' is included in the 'select' query parameter.`,
-      );
-    }
-    return `${quoteIdent(j.alias)}.j IS ${p.present ? "NOT " : ""}NULL`;
+    if (!j) throw notEmbedded(p.embed);
+    return `${j.presence} IS ${p.present ? "NOT " : ""}NULL`;
   });
+
+/**
+ * The filters of one level. A filter `<embed>.is.null` -- in a logic tree too -- tests whether the
+ * embed found a row, as PostgREST's `addNullEmbedFilters` has it; any other is on a column.
+ */
+const levelWhere = (
+  nodes: ReadonlyArray<FilterNode>,
+  alias: string,
+  rel: Relation,
+  joins: ReadonlyArray<Join>,
+  values: Values,
+): string[] => {
+  const render = (node: FilterNode): string => {
+    if (node.kind === "filter") {
+      const j =
+        node.op === "is" && node.value === "null" && node.field.json.length === 0
+          ? joins.find((x) => x.name === node.field.name)
+          : undefined;
+      if (j) return `${j.presence} IS ${node.negate ? "DISTINCT" : "NOT DISTINCT"} FROM NULL`;
+      return nodeSql(node, alias, rel, values);
+    }
+    const inner = `(${node.children.map(render).join(node.op === "and" ? " AND " : " OR ")})`;
+    return node.negate ? `NOT ${inner}` : inner;
+  };
+  return nodes.map(render);
+};
 
 const paging = (limit: number | undefined, offset: number | undefined): string => {
   let s = "";
@@ -291,7 +320,7 @@ const buildEmbed = (
   }
   if (inner.joins.length) from += ` ${inner.joins.map((j) => j.sql).join(" ")}`;
 
-  conds.push(...(params ? whereSql(params.filters, cAlias, child, ctx.values) : []));
+  conds.push(...(params ? levelWhere(params.filters, cAlias, child, inner.joins, ctx.values) : []));
   conds.push(...presenceConditions(params, inner.joins));
 
   const order = params ? orderClause(ctx, params.order, child, cAlias, item.items, inner.joins) : "";
@@ -307,7 +336,8 @@ const buildEmbed = (
   if (item.spread) {
     const names = itemNames(ctx, item.items, child);
     if (toOne) {
-      const lateral = `${joinKw} (${body}${page ? "" : " LIMIT 1"}) AS ${q(eAlias)} ON TRUE`;
+      const present = q(`${ALIAS}_present`);
+      const lateral = `${joinKw} (SELECT _r.*, TRUE AS ${present} FROM (${body}) AS _r LIMIT 1) AS ${q(eAlias)} ON TRUE`;
       const refs = names.map((n) => `${q(eAlias)}.${q(n)}`);
       return {
         // the aggregates are applied here, or -- under another to-one spread -- handed up
@@ -315,7 +345,7 @@ const buildEmbed = (
           const h = inner.hoisted.get(n);
           return `${h && !hoist ? applyHoisted(refs[i]!, h) : refs[i]} AS ${q(n)}`;
         }),
-        join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner" },
+        join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner", presence: `${q(eAlias)}.${present}` },
         group: refs.filter((_, i) => !inner.hoisted.has(names[i]!)),
         hoisted: hoist ? inner.hoisted : none,
       };
@@ -328,16 +358,25 @@ const buildEmbed = (
         null,
       );
     }
-    // to-many spread: every column becomes an array with one entry per related row
-    // one row per parent row, even with no column to make: the aggregate is what makes it one
-    const agg =
-      names.map((n) => `coalesce(${J}_agg(_r.${q(n)}), '[]'::${J}) AS ${q(n)}`).join(", ") || "count(*) AS _n";
+    // to-many spread: every column becomes an array with one entry per related row, and the count of
+    // those rows says whether there were any (it also keeps one row per parent row with no column)
+    const counted = q(`${ALIAS}_n`);
+    const agg = [
+      ...names.map((n) => `coalesce(${J}_agg(_r.${q(n)}), '[]'::${J}) AS ${q(n)}`),
+      `count(*) AS ${counted}`,
+    ].join(", ");
     const having = item.join === "inner" ? " HAVING count(*) > 0" : "";
     const lateral = `${joinKw} (SELECT ${agg} FROM (${body}) AS _r${having}) AS ${q(eAlias)} ON TRUE`;
     const refs = names.map((n) => `${q(eAlias)}.${q(n)}`);
     return {
       cols: names.map((n, i) => `${refs[i]} AS ${q(n)}`),
-      join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner" },
+      join: {
+        sql: lateral,
+        alias: eAlias,
+        name,
+        inner: item.join === "inner",
+        presence: `nullif(${q(eAlias)}.${counted}, 0)`,
+      },
       group: refs,
       hoisted: none,
     };
@@ -347,7 +386,7 @@ const buildEmbed = (
     const lateral = `${joinKw} (SELECT to_${J}(_r) AS j FROM (${body}) AS _r LIMIT 1) AS ${q(eAlias)} ON TRUE`;
     return {
       cols: hasCols ? [`${q(eAlias)}.j AS ${q(name)}`] : [],
-      join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner" },
+      join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner", presence: `${q(eAlias)}.j` },
       group: hasCols ? [`${q(eAlias)}.j`] : [],
       hoisted: none,
     };
@@ -357,7 +396,7 @@ const buildEmbed = (
   const lateral = `${joinKw} (SELECT ${J}_agg(_r) AS j FROM (${body}) AS _r${having}) AS ${q(eAlias)} ON TRUE`;
   return {
     cols: hasCols ? [`coalesce(${q(eAlias)}.j, '[]'::${J}) AS ${q(name)}`] : [],
-    join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner" },
+    join: { sql: lateral, alias: eAlias, name, inner: item.join === "inner", presence: `${q(eAlias)}.j` },
     group: hasCols ? [`${q(eAlias)}.j`] : [],
     hoisted: none,
   };
@@ -369,7 +408,7 @@ export const buildRead = (opts: ReadOptions): ReadSql => {
   const built = buildItems(ctx, opts.query.select, opts.rel, ROOT_ALIAS, []);
 
   const where = [
-    ...whereSql(opts.query.root.filters, ROOT_ALIAS, opts.rel, ctx.values),
+    ...levelWhere(opts.query.root.filters, ROOT_ALIAS, opts.rel, built.joins, ctx.values),
     ...presenceConditions(opts.query.root, built.joins),
   ];
   const whereClause = where.length ? ` WHERE ${where.join(" AND ")}` : "";
