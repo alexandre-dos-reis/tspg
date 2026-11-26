@@ -259,9 +259,8 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
 
   // Plain columns of views (and materialized views) and the table column each one is read from,
   // taken from the rewrite rule's target list. PostgREST uses this to follow foreign keys through views.
-  // The DISTINCT ON has to be ordered by its own keys, so the naming order is the outer one: it
-  // decides the order of the foreign keys views add, and which column of a view that exposes one
-  // table column twice is the one a key is built from.
+  // The order is the naming order: it decides the order of the foreign keys views add, and which
+  // column of a view that exposes one table column twice is the one a key is built from.
   const viewRows = await run<{
     vschema: string;
     vname: string;
@@ -271,24 +270,43 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     tcol: string;
   }>(
     db,
-    `SELECT v.vschema, v.vname, v.vcol, v.tschema, v.tname, v.tcol
-       FROM (SELECT DISTINCT ON (vc.oid, m.x[1]::int)
-                    vn.nspname AS vschema, vc.relname AS vname, va.attname AS vcol, va.attnum AS vpos,
-                    tn.nspname AS tschema, tc.relname AS tname, ta.attname AS tcol
-               FROM pg_rewrite rw
-               JOIN pg_class vc ON vc.oid = rw.ev_class AND vc.relkind IN ('v','m')
-               JOIN pg_namespace vn ON vn.oid = vc.relnamespace
-               CROSS JOIN LATERAL regexp_matches(rw.ev_action::text,
-                    ':resno (\\d+) :resname [^:]* :ressortgroupref \\d+ :resorigtbl (\\d+) :resorigcol (\\d+) :resjunk false', 'g')
-                    WITH ORDINALITY AS m(x, ord)
-               JOIN pg_attribute va ON va.attrelid = vc.oid AND va.attnum = m.x[1]::int AND NOT va.attisdropped
-               JOIN pg_class tc ON tc.oid = m.x[2]::oid
-               JOIN pg_namespace tn ON tn.oid = tc.relnamespace
-               JOIN pg_attribute ta ON ta.attrelid = tc.oid AND ta.attnum = m.x[3]::int
-              WHERE vn.nspname = ANY(${S}) AND rw.rulename = '_RETURN' AND m.x[2]::oid <> 0
-              -- the last match for a column wins the DISTINCT ON, so this inner order is the rule's
-              ORDER BY vc.oid, m.x[1]::int, m.ord DESC) v
-      ORDER BY v.vschema, v.vname, v.vpos`,
+    // Only the view's own target list: the rule's node tree also holds the target lists of its
+    // subqueries, whose columns are numbered from 1 too, and a scan of the whole tree mistakes one of
+    // theirs for one of the view's. The tree is turned into JSON the way PostgREST's
+    // `allViewsKeyDependencies` does (replace() calls tuned on large schemas -- see the comments
+    // there), and the first query's `targetList` is read from it.
+    `WITH views AS (
+            SELECT c.oid AS view_id, n.nspname AS vschema, c.relname AS vname, r.ev_action AS def
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_rewrite r ON r.ev_class = c.oid AND r.rulename = '_RETURN'
+             WHERE c.relkind IN ('v','m') AND n.nspname = ANY(${S})
+          ),
+          as_json AS (
+            SELECT view_id, vschema, vname,
+                   replace(replace(replace(replace(replace(replace(replace(regexp_replace(
+                   replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(
+                     def::text,
+                     '<>', '()'), ',', ''), E'\\\\{', ''), E'\\\\}', ''),
+                     ' :targetList ', ',"targetList":'), ' :resno ', ',"resno":'),
+                     ' :resorigtbl ', ',"resorigtbl":'), ' :resorigcol ', ',"resorigcol":'),
+                     '{', '{ :'), '((', '{(('), '({', '{({'),
+                     ' :[^}{,]+', ',"":', 'g'),
+                     ',"":}', '}'), ',"":,', ','), '{(', '('), '{,', '{'), '(', '['), ')', ']'), ' ', ','
+                   )::json AS def
+              FROM views
+          ),
+          entries AS (
+            SELECT view_id, vschema, vname, json_array_elements(def->0->'targetList') AS entry FROM as_json
+          )
+     SELECT e.vschema, e.vname, va.attname AS vcol, tn.nspname AS tschema, tc.relname AS tname, ta.attname AS tcol
+       FROM entries e
+       JOIN pg_attribute va ON va.attrelid = e.view_id AND va.attnum = (e.entry->>'resno')::int AND NOT va.attisdropped
+       JOIN pg_class tc ON tc.oid = (e.entry->>'resorigtbl')::oid
+       JOIN pg_namespace tn ON tn.oid = tc.relnamespace
+       JOIN pg_attribute ta ON ta.attrelid = tc.oid AND ta.attnum = (e.entry->>'resorigcol')::int
+      WHERE (e.entry->>'resorigtbl')::oid <> 0
+      ORDER BY e.vschema, e.vname, va.attnum`,
   );
 
   // Views whose own query has an outer join, and whose columns therefore cannot inherit the source
@@ -583,10 +601,10 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     return undefined;
   };
 
-  // The key of a view as PostgREST's schema cache reads it (`addViewPrimaryKeys`): every primary key
-  // column of every table behind it that the view exposes, outer join or not, whole key or not. It
-  // does not tell a row from a set -- `viewPk` does that -- but it is what PostgREST's `Location`
-  // and `PUT` are made of, so `@tspg/rest` answers with it.
+  // The key of a view as PostgREST's schema cache reads it (`addViewPrimaryKeys`): the primary key of
+  // every table behind it whose key the view exposes whole, outer join or not. It does not tell a row
+  // from a set -- `viewPk` does that -- but it is what PostgREST's `Location` and `PUT` are made of,
+  // so `@tspg/rest` answers with it.
   const pgrstViewPk = (key: string): string[] | undefined => {
     const exposed = new Map<string, string>();
     for (const col of colsByRel.get(key) ?? []) {
@@ -596,10 +614,10 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     }
     const names: string[] = [];
     for (const tableKey of new Set([...exposed.keys()].map((k) => k.slice(0, k.lastIndexOf("."))))) {
-      for (const c of pk.get(tableKey) ?? []) {
-        const n = exposed.get(`${tableKey}.${c}`);
-        if (n !== undefined && !names.includes(n)) names.push(n);
-      }
+      const cols = (pk.get(tableKey) ?? []).map((c) => exposed.get(`${tableKey}.${c}`));
+      // no part of a key: PostgREST keeps a key only when the view exposes all of it
+      if (cols.length === 0 || cols.some((n) => n === undefined)) continue;
+      for (const n of cols as string[]) if (!names.includes(n)) names.push(n);
     }
     return names.length ? names : undefined;
   };

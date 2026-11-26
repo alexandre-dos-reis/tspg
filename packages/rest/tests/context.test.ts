@@ -45,10 +45,11 @@ describe.skipIf(!hasDb)("request context (the library's replacement for JWT)", (
     expect((await t.get("/clients?select=id")).status).toBe(200);
   });
 
-  test("an unknown role is a database error", async () => {
+  test("an unknown role is a database error, answered as an authentication failure", async () => {
+    // PostgREST's `mapSQLtoHTTP` makes a 22023 about a role that does not exist a 401 (its #3601)
     t = await makeApi();
     const r = await t.get("/clients", { ctx: { role: "does_not_exist" } });
-    expect(r.status).toBe(400);
+    expect(r.status).toBe(401);
     expect(r.json().code).toBe("22023");
   });
 

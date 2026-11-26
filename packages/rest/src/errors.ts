@@ -7,7 +7,8 @@ import { DbQueryError, type DbErrorInfo, EngineError, type Reason, isConnectionE
 export interface ErrorBody {
   readonly code: string;
   readonly message: string;
-  readonly details: string | null;
+  /** A string, or -- for an ambiguous embed (PGRST201) -- the relationships it could mean, as PostgREST lists them. */
+  readonly details: string | null | ReadonlyArray<Readonly<Record<string, string>>>;
   readonly hint: string | null;
 }
 
@@ -44,7 +45,12 @@ export class PgRestError extends Error {
  * error reads it from `Error.message` and wants the code and hint with it.
  */
 const describe = (b: ErrorBody): string =>
-  [`${b.code}:`, b.message, b.details ? `(${b.details})` : "", b.hint ? `hint: ${b.hint}` : ""]
+  [
+    `${b.code}:`,
+    b.message,
+    b.details ? `(${typeof b.details === "string" ? b.details : JSON.stringify(b.details)})` : "",
+    b.hint ? `hint: ${b.hint}` : "",
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -71,15 +77,28 @@ export class ApiError extends Error {
  * SQLSTATE → HTTP status, following the PostgREST 16 table
  * (https://docs.postgrest.org/en/v16/references/errors.html).
  */
-const statusFromSqlState = (state: string, role: string | undefined, anon: string | undefined): number => {
-  if (/^PT\d{3}$/.test(state)) return Number(state.slice(2));
+const statusFromSqlState = (
+  state: string,
+  message: string,
+  role: string | undefined,
+  anon: string | undefined,
+): number => {
+  // `PTxyz` is status xyz, when xyz is a number (PostgREST's `mapSQLtoHTTP`); `PT40A` is a 500
+  if (state.startsWith("PT")) return /^\d+$/.test(state.slice(2)) ? Number(state.slice(2)) : 500;
   switch (state) {
     case "23503":
     case "23505":
       return 409;
     case "25006":
       return 405;
+    case "21000":
+      // cardinality_violation: pg-safeupdate's refusal is the client's, anything else the server's
+      return message.endsWith("requires a WHERE clause") ? 400 : 500;
+    case "22023":
+      // a role that does not exist is an authentication failure
+      return message.startsWith("role") && message.endsWith("does not exist") ? 401 : 400;
     case "42883":
+      return message.startsWith("function xmlagg(") ? 406 : 404;
     case "42P01":
       return 404;
     case "42P17":
@@ -90,6 +109,8 @@ const statusFromSqlState = (state: string, role: string | undefined, anon: strin
       return 400;
     case "53400":
       return 500;
+    case "57P01":
+      return 503;
   }
   switch (state.slice(0, 2)) {
     case "08":
@@ -120,6 +141,73 @@ const statusFromSqlState = (state: string, role: string | undefined, anon: strin
   }
 };
 
+const isText = (v: unknown): v is string => typeof v === "string";
+const isOptionalText = (v: unknown): boolean => v === undefined || v === null || typeof v === "string";
+const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
+  try {
+    const v: unknown = JSON.parse(text);
+    return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** PostgREST's PGRST121, for a `RAISE SQLSTATE 'PGRST'` whose MESSAGE or DETAIL is not what the convention asks. */
+const pgrstParseError = (details: string, hint: string): ApiError =>
+  new ApiError({
+    status: 500,
+    headers: {},
+    body: { code: "PGRST121", message: `Could not parse JSON in the "RAISE SQLSTATE 'PGRST'" error`, details, hint },
+  });
+const MESSAGE_HINT =
+  "MESSAGE must be a JSON object with obligatory keys: 'code', 'message' and optional keys: 'details', 'hint'.";
+const DETAIL_HINT =
+  "DETAIL must be a JSON object with obligatory keys: 'status', 'headers' and optional key: 'status_text'.";
+
+/**
+ * `RAISE SQLSTATE 'PGRST'`, as PostgREST's `parseRaisePGRST` reads it: MESSAGE is the body
+ * (`code` and `message`, `details` and `hint` optional), DETAIL the status and the headers.
+ */
+const raisedPgrst = (err: DbErrorInfo): ApiError => {
+  const msg = parseJsonObject(err.message);
+  if (
+    !msg ||
+    !isText(msg["code"]) ||
+    !isText(msg["message"]) ||
+    !isOptionalText(msg["details"]) ||
+    !isOptionalText(msg["hint"])
+  ) {
+    return pgrstParseError(`Invalid JSON value for MESSAGE: '${err.message}'`, MESSAGE_HINT);
+  }
+  if (err.detail === undefined || err.detail === null || err.detail === "") {
+    return pgrstParseError("DETAIL is missing in the RAISE statement", DETAIL_HINT);
+  }
+  const det = parseJsonObject(err.detail);
+  const headers = det?.["headers"];
+  if (
+    !det ||
+    typeof det["status"] !== "number" ||
+    !Number.isInteger(det["status"]) ||
+    !isOptionalText(det["status_text"]) ||
+    headers === null ||
+    typeof headers !== "object" ||
+    Array.isArray(headers) ||
+    !Object.values(headers).every(isText)
+  ) {
+    return pgrstParseError(`Invalid JSON value for DETAIL: '${err.detail}'`, DETAIL_HINT);
+  }
+  return new ApiError({
+    status: det["status"],
+    headers: headers as Record<string, string>,
+    body: {
+      code: msg["code"],
+      message: msg["message"],
+      details: (msg["details"] as string | null | undefined) ?? null,
+      hint: (msg["hint"] as string | null | undefined) ?? null,
+    },
+  });
+};
+
 /**
  * Map a Postgres error to a PostgREST-style API error.
  *
@@ -132,40 +220,9 @@ export const dbErrorToApiError = (
   role: string | undefined,
   anonymousRole: string | undefined,
 ): ApiError => {
-  if (err.sqlState === "PGRST") {
-    try {
-      const msg = JSON.parse(err.message) as Partial<ErrorBody>;
-      const det = err.detail
-        ? (JSON.parse(err.detail) as {
-            status?: number;
-            headers?: Record<string, string>;
-          })
-        : {};
-      return new ApiError({
-        status: det.status ?? 500,
-        headers: det.headers ?? {},
-        body: {
-          code: msg.code ?? "PGRST",
-          message: msg.message ?? "",
-          details: msg.details ?? null,
-          hint: msg.hint ?? null,
-        },
-      });
-    } catch {
-      return new ApiError({
-        status: 500,
-        headers: {},
-        body: {
-          code: "PGRST121",
-          message: "Could not parse JSON in the RAISE error",
-          details: err.message,
-          hint: null,
-        },
-      });
-    }
-  }
+  if (err.sqlState === "PGRST") return raisedPgrst(err);
   return new ApiError({
-    status: statusFromSqlState(err.sqlState, role, anonymousRole),
+    status: statusFromSqlState(err.sqlState, err.message, role, anonymousRole),
     headers: {},
     body: {
       code: err.sqlState,
@@ -209,7 +266,8 @@ const fromEngineError = (e: EngineError): ApiError => {
   const headers: Record<string, string> = {};
   if (e.data.total !== undefined) headers["Content-Range"] = `*/${e.data.total}`;
   if (e.data.applied) headers["Preference-Applied"] = e.data.applied;
-  return new ApiError({ status, body: { code, message: e.message, details: e.details, hint: e.hint }, headers });
+  const details = e.data.json && e.details !== null ? (JSON.parse(e.details) as ErrorBody["details"]) : e.details;
+  return new ApiError({ status, body: { code, message: e.message, details, hint: e.hint }, headers });
 };
 
 /** Map anything thrown while handling a request to an {@link ApiError}. */

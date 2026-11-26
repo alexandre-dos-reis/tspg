@@ -51,10 +51,7 @@ type DatabasePgRestApiRelations = {
     rel: {
       client_id: { rel: "clients"; to: "one" };
       clients: { rel: "clients"; to: "one" };
-      huge_orders: { rel: "huge_orders"; to: "many" };
       order_items: { rel: "order_items"; to: "many" };
-      orders: { rel: "orders"; to: "many" };
-      orders_with_client: { rel: "orders_with_client"; to: "many" };
       products: { rel: "products"; to: "many" };
     };
   };
@@ -158,10 +155,7 @@ type DatabasePgRestApiRelations = {
     updatable: true;
     deletable: true;
     rel: {
-      big_orders: { rel: "big_orders"; to: "many" };
       order_items: { rel: "order_items"; to: "many" };
-      orders: { rel: "orders"; to: "many" };
-      orders_with_client: { rel: "orders_with_client"; to: "many" };
       products: { rel: "products"; to: "many" };
     };
   };
@@ -236,7 +230,7 @@ type DatabasePgRestApiRelations = {
     rel: {
       big_orders: { rel: "big_orders"; to: "one" };
       huge_orders: { rel: "huge_orders"; to: "one" };
-      order_id: { rel: "orders"; to: "one"; ambiguous: true; hints: ["order_items_order_id_fkey", "order_items_order_id_fkey", "order_items_order_id_fkey", "order_items_order_id_fkey"] };
+      order_id: { rel: "orders"; to: "one" };
       orders: { rel: "orders"; to: "one" };
       orders_with_client: { rel: "orders_with_client"; to: "one" };
       product_id: { rel: "products"; to: "one" };
@@ -271,13 +265,10 @@ type DatabasePgRestApiRelations = {
     updatable: true;
     deletable: true;
     rel: {
-      big_orders: { rel: "big_orders"; to: "many" };
       client_id: { rel: "clients"; to: "one" };
       clients: { rel: "clients"; to: "one" };
-      huge_orders: { rel: "huge_orders"; to: "many" };
       order_client: { rel: "clients"; to: "one" };
       order_items: { rel: "order_items"; to: "many" };
-      orders_with_client: { rel: "orders_with_client"; to: "many" };
       products: { rel: "products"; to: "many" };
     };
   };
@@ -295,10 +286,7 @@ type DatabasePgRestApiRelations = {
     updatable: false;
     deletable: false;
     rel: {
-      big_orders: { rel: "big_orders"; to: "many" };
-      huge_orders: { rel: "huge_orders"; to: "many" };
       order_items: { rel: "order_items"; to: "many" };
-      orders: { rel: "orders"; to: "many" };
       products: { rel: "products"; to: "many" };
     };
   };

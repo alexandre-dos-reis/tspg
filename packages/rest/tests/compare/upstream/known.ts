@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 159 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 113 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -145,51 +145,14 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /some_numbers?val=eq.4 +{\"Accept\":\"unknown/unknown\"}": "a media type handled in the database",
   "GET /xmltest +{\"Accept\":\"text/xml\"}": "a media type handled in the database",
 
-  // ── an embed by a name that is not a table (23) ──
-  "GET /activities?select=fst_shift(*)": "an embed by a name that is not a table",
-  "GET /articleStars?select=createdAt,article:articles(id),user(name)&limit=1": "an embed by a name that is not a table",
-  "GET /authors_books_number?select=*,books(title)&id=eq.1": "an embed by a name that is not a table",
-  "GET /authors_have_book_in_decade?select=*,books(title)&id=eq.3": "an embed by a name that is not a table",
-  "GET /authors_w_entities?select=name,entities,books(title)&id=eq.1": "an embed by a name that is not a table",
-  "GET /capital?select=name,capital_country_id_fkey(name)": "an embed by a name that is not a table",
-  "GET /comments?select=content,user(name)": "an embed by a name that is not a table",
-  "GET /country?select=name,capital_country_id_fkey(name)": "an embed by a name that is not a table",
-  "GET /country?select=name,id(name)": "an embed by a name that is not a table",
+  // ── an embed by a name that is not a table (4) ──
   "GET /i2459_self_v1?select=*,parent(*),grandparent(*)": "an embed by a name that is not a table",
   "GET /i2459_self_v2?select=*,parent(*),grandparent(*)": "an embed by a name that is not a table",
   "GET /i2459_simple_v1?select=*,i2459_simple_v2!t1_id2(*)": "an embed by a name that is not a table",
   "GET /i2459_simple_v2?select=*,i2459_simple_v1!t1_id2(*)": "an embed by a name that is not a table",
-  "GET /orders?id=eq.1&select=id, name, billing(address), shipping(address)": "an embed by a name that is not a table",
-  "GET /orders?id=eq.1&select=id, name, billing_address_id(id), shipping(id)": "an embed by a name that is not a table",
-  "GET /organizations?select=name,manager(name),auditees:organizations!auditor(name,manager(name),refereeds:organizations!referee(name,manager(name)))&id=eq.2": "an embed by a name that is not a table",
-  "GET /organizations?select=name,manager(name),referee(name,manager(name),auditor(name,manager(name))),auditor(name,manager(name),referee(name,manager(name)))&id=eq.5": "an embed by a name that is not a table",
-  "GET /projects?id=in.(1,3)&select=id,name,client(id,name)": "an embed by a name that is not a table",
-  "GET /projects?id=in.(1,3)&select=id,name,client_id,client(id,name)": "an embed by a name that is not a table",
-  "GET /projects?select=id,client!inner(id)&client.id=eq.2": "an embed by a name that is not a table",
-  "GET /sites?select=name,main_project(name)&site_id=eq.1": "an embed by a name that is not a table",
-  "GET /tasks?id=eq.1&select=id,name,projects_view!project(id,name,client(id,name))": "an embed by a name that is not a table",
-  "GET /unit_workdays?select=unit_id,day,fst_shift(car_id,schedule(name)),snd_shift(camera_id,schedule(name))": "an embed by a name that is not a table",
 
-  // ── an ambiguous embed (19) ──
-  "GET /adaptation_notifications?select=id,status,series(*)": "an ambiguous embed",
-  "GET /agents?select=*,departments(*)": "an ambiguous embed",
-  "GET /designers?select=*,videogames!inner(*)": "an ambiguous embed",
-  "GET /first?select=second(*)": "an ambiguous embed",
+  // ── an ambiguous embed (1) ──
   "GET /i2459_composite_v2?select=*,i2459_composite_v1(*)": "an ambiguous embed",
-  "GET /managers?select=name,...organizations(organizations:name,referees:referee)&id=eq.1": "an ambiguous embed",
-  "GET /message?select=id,body,sender(id,name)&id=eq.5": "an ambiguous embed",
-  "GET /plate?select=*,well(*)": "an ambiguous embed",
-  "GET /projects?id=in.(1,3)&select=id,name,client_id(id,name)": "an ambiguous embed",
-  "GET /projects?id=in.(1,3)&select=id,name,client_id,client:client_id(id,name)": "an ambiguous embed",
-  "GET /sites?select=*,big_projects(*)": "an ambiguous embed",
-  "GET /tasks?id=eq.1&select=id,name,project:projects_view!project_id(id,name,client:client_id(id,name))": "an ambiguous embed",
-  "GET /test?select=id,parent_id,parent:parent_id(id)&order=id": "an ambiguous embed",
-  "GET /users?select=*,tasks:users_tasks(*,...tasks(*))&limit=1": "an ambiguous embed",
-  "GET /users?select=*,tasks:users_tasks(...tasks(*))&limit=1": "an ambiguous embed",
-  "GET /users?select=*,users_tasks!inner(tasks!inner(projects()))&users_tasks.tasks.id=eq.3": "an ambiguous embed",
-  "GET /users?select=*,users_tasks(tasks(projects()))": "an ambiguous embed",
-  "GET /videogames?select=*,designers!inner(*)": "an ambiguous embed",
-  "GET /whatev_sites?select=*,whatev_projects(*)": "an ambiguous embed",
 
   // ── an aggregate in a spread embed (13) ──
   "GET /budget_expenses?select=...budget_categories(total_budget:budget_amount.sum())": "an aggregate in a spread embed",
@@ -221,14 +184,10 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
 
-  // ── the wording of an error (7) ──
-  "GET /car_model_sales?id=in.(1,3,4)&select=id,name,car_models_default(id,name)&order=id.asc": "the wording of an error",
-  "GET /car_models?id=in.(1,2,4)&select=id,name,car_model_sales_202101(id)&order=id.asc": "the wording of an error",
+  // ── the wording of an error (3) ──
   "GET /clients?select=*,pros:projects(*)&order=pros(id)": "the wording of an error",
   "GET /clients?select=id,projects(id,tasks(id,name))&projects.tasks2.name=like.Design*": "the wording of an error",
-  "GET /rpc/single_article?id=1&select=*,article_stars(*)": "the wording of an error",
   "POST /rpc/delete_items_returns_void +{\"Prefer\":\"handling=strict, max-affected=20, tx=rollback\"} <>": "the wording of an error",
-  "POST /rpc/single_article?select=*,article_stars(*) +{\"Prefer\":\"tx=rollback\"} <{ \"id\": 1}>": "the wording of an error",
 
   // ── a filter or an order on a spread embed (7) ──
   "GET /factories?select=factory:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
@@ -255,18 +214,9 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /rpc/get_tsearch_to_tsvector?select=text_search_rec_domain&text_search_rec_domain=fts(simple).impossible": "fts() on a domain over tsvector",
   "GET /tsearch_to_tsvector?select=text_search_vector&text_search_vector=fts(simple).of": "fts() on a domain over tsvector",
 
-  // ── the RAISE conventions (3) ──
-  "GET /rpc/raise_sqlstate_invalid_json_details": "the RAISE conventions",
-  "GET /rpc/raise_sqlstate_invalid_json_message": "the RAISE conventions",
-  "GET /rpc/raise_sqlstate_missing_details": "the RAISE conventions",
-
   // ── privileges through a view (2) ──
   "DELETE /app_users?id=eq.1&select=id,email +{\"Prefer\":\"return=representation, tx=rollback\"} <{ \"password\": \"passxyz\" }>": "privileges through a view",
   "POST /limited_article_stars?select=article_id,user_id +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"article_id\": 2, \"user_id\": 1}>": "privileges through a view",
-
-  // ── the status of an error (2) ──
-  "GET /bad_subquery": "the status of an error",
-  "GET /rpc/raise_bad_pt": "the status of an error",
 
   // ── the OpenAPI document (1) ──
   "GET /": "the OpenAPI document",
