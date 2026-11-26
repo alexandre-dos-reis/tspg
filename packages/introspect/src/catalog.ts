@@ -207,10 +207,18 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     to_json: string | null;
     from_json: string | null;
     from_text: string | null;
+    base_type: string | null;
   }>(
     db,
     `SELECT n.nspname AS schema, c.relname AS "table", a.attname AS name,
             format_type(a.atttypid, a.atttypmod) AS type,
+            CASE WHEN ty.typtype = 'd' THEN
+              (WITH RECURSIVE down(t) AS (
+                      SELECT ty.typbasetype
+                      UNION ALL
+                      SELECT p.typbasetype FROM down JOIN pg_type p ON p.oid = down.t WHERE p.typtype = 'd')
+               SELECT format_type(down.t, NULL) FROM down JOIN pg_type b ON b.oid = down.t WHERE b.typtype <> 'd' LIMIT 1)
+            END AS base_type,
             ${castFunctionSql("a.atttypid", "'json'::regtype", "ty")} AS to_json,
             ${castFunctionSql("'json'::regtype", "a.atttypid", "ty")} AS from_json,
             ${castFunctionSql("'text'::regtype", "a.atttypid", "ty")} AS from_text,
@@ -594,6 +602,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
           : {}),
       comment: c.comment,
       position: c.pos,
+      ...(c.base_type ? { baseType: c.base_type } : {}),
       ...(c.to_json || c.from_json || c.from_text
         ? {
             representation: {

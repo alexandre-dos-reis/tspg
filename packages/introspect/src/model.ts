@@ -60,6 +60,8 @@ export interface Column {
   readonly identity?: "always" | "by-default" | undefined;
   readonly comment: string | null;
   readonly position: number;
+  /** For a column whose type is a domain, the type at the bottom of it (through domains over domains). */
+  readonly baseType?: string | undefined;
   /**
    * PostgREST's "data representations": for a column whose type is a domain with implicit casts to or
    * from `json` or `text` done by a function, those functions, schema-qualified. `toJson` renders the

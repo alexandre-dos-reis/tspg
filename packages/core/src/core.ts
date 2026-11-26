@@ -331,6 +331,22 @@ export const planTable = (
     return { rows: `SELECT * FROM ${ALIAS}_source`, shape: shapeFor(r) };
   };
 
+  // a representation made of columns only reads those back (PostgREST returns no more)
+  const known = (name: string) => rel.columns.some((c) => c.name === name);
+  const returningColumns =
+    returning === "representation" &&
+    query.select.length > 0 &&
+    query.select.every((i) => i.kind === "field" && known(i.field.name)) &&
+    query.root.order.every((t) => !t.relation && known(t.field.name))
+      ? [
+          ...new Set([
+            ...query.select.map((i) => (i as { field: { name: string } }).field.name),
+            // the representation is ordered as asked, so what it is ordered by comes back too
+            ...query.root.order.map((t) => t.field.name),
+          ]),
+        ]
+      : undefined;
+
   const common = {
     rel,
     readOnly: false,
@@ -360,6 +376,7 @@ export const planTable = (
       columns: query.columns,
       onConflict: query.onConflict,
       resolution: prefer.resolution,
+      returningColumns,
       missingDefault: prefer.missing === "default",
       countInserted,
       returning,
@@ -399,6 +416,7 @@ export const planTable = (
       clauses: qp.setClauses,
       filters: query.root.filters,
       returning,
+      returningColumns,
       values,
     });
     const { rows: outRows, shape } = rowsFor(returning);
@@ -437,7 +455,7 @@ export const planTable = (
 
   if (operation === "delete") {
     const values = valuesFor(qp, 0);
-    const deleteSql = buildDelete({ rel, filters: query.root.filters, returning, values });
+    const deleteSql = buildDelete({ rel, filters: query.root.filters, returning, returningColumns, values });
     const { rows: outRows, shape } = rowsFor(returning);
     return {
       ...common,
@@ -847,7 +865,7 @@ export const execute = async (
           if (plan.kind === "rpc" && plan.rpc && !plan.rpc.fn.returnsSet) {
             throw new EngineError(
               "max_affected_unsupported",
-              "max-affected preference is only valid for functions that return a set",
+              "Function must return SETOF or TABLE when max-affected preference is used with handling=strict",
               null,
               null,
             );

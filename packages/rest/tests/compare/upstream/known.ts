@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 51 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 41 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -129,24 +129,8 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
 
-  // ── the wording of an error (2) ──
-  "GET /clients?select=id,projects(id,tasks(id,name))&projects.tasks2.name=like.Design*": "the wording of an error",
-  "POST /rpc/delete_items_returns_void +{\"Prefer\":\"handling=strict, max-affected=20, tx=rollback\"} <>": "the wording of an error",
-
-  // ── OPTIONS (4) ──
+  // ── OPTIONS (1) ──
   "OPTIONS / +{\"Accept\":\"*/*\",\"Origin\":\"http://example.com\",\"Access-Control-Request-Method\":\"POST\",\"Access-Control-Request-Headers\":\"Foo,Bar\"}": "OPTIONS",
-  "OPTIONS /projects_auto_updatable_view_without_pk": "OPTIONS",
-  "OPTIONS /projects_view_with_all_triggers_without_pk": "OPTIONS",
-  "OPTIONS /rpc/reset_table": "OPTIONS",
-
-  // ── fts() on a domain over tsvector (3) ──
-  "GET /rpc/get_tsearch_to_tsvector?select=text_search_domain&text_search_domain=fts(simple).impossible": "fts() on a domain over tsvector",
-  "GET /rpc/get_tsearch_to_tsvector?select=text_search_rec_domain&text_search_rec_domain=fts(simple).impossible": "fts() on a domain over tsvector",
-  "GET /tsearch_to_tsvector?select=text_search_vector&text_search_vector=fts(simple).of": "fts() on a domain over tsvector",
-
-  // ── privileges through a view (2) ──
-  "DELETE /app_users?id=eq.1&select=id,email +{\"Prefer\":\"return=representation, tx=rollback\"} <{ \"password\": \"passxyz\" }>": "privileges through a view",
-  "POST /limited_article_stars?select=article_id,user_id +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"article_id\": 2, \"user_id\": 1}>": "privileges through a view",
 
   // ── the OpenAPI document (1) ──
   "GET /": "the OpenAPI document",

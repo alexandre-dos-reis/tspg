@@ -11,8 +11,11 @@ export type JsonObject = Record<string, unknown>;
 /** What the data-modifying statement should RETURN. */
 export type Returning = "representation" | "pk" | "minimal";
 
-const returningSql = (rel: Relation, returning: Returning): string => {
+const returningSql = (rel: Relation, returning: Returning, columns?: ReadonlyArray<string>): string => {
   const alias = quoteIdent(ROOT_ALIAS);
+  // only what the representation reads: PostgREST does not need SELECT on the other columns
+  if (returning === "representation" && columns?.length)
+    return columns.map((c) => `${alias}.${quoteIdent(c)}`).join(", ");
   if (returning === "representation") return `${alias}.*`;
   // `return=headers-only` reads back the columns `Location` names
   const key = pgrstKey(rel);
@@ -78,6 +81,8 @@ export interface InsertOptions {
    */
   readonly countInserted?: boolean | undefined;
   readonly returning: Returning;
+  /** For a representation: the columns it reads, when they are only columns; all of them otherwise. */
+  readonly returningColumns?: ReadonlyArray<string> | undefined;
 }
 
 /**
@@ -117,7 +122,7 @@ export const buildInsert = (o: InsertOptions): string => {
   const { rel } = o;
   const table = quoteQualified(rel.schema, rel.name);
   const target = `${table} AS ${quoteIdent(ROOT_ALIAS)}`;
-  const returning = returningSql(rel, o.returning);
+  const returning = returningSql(rel, o.returning, o.returningColumns);
   const cols = o.columns ? [...o.columns] : unionKeys(o.rows);
   if (!o.columns && o.rows.some((r) => Object.keys(r).length !== cols.length)) {
     throw new EngineError("invalid_body", "All object keys must match");
@@ -244,7 +249,7 @@ export const buildUpdate = (o: UpdateOptions): string | null => {
     : "";
   return (
     `UPDATE ${table} AS ${quoteIdent(ROOT_ALIAS)} SET ${set}${from}` +
-    `${where.length ? ` WHERE ${where.join(" AND ")}` : ""} RETURNING ${returningSql(rel, o.returning)}`
+    `${where.length ? ` WHERE ${where.join(" AND ")}` : ""} RETURNING ${returningSql(rel, o.returning, o.returningColumns)}`
   );
 };
 
@@ -259,6 +264,6 @@ export const buildDelete = (o: DeleteOptions): string => {
   const where = whereSql(o.filters, ROOT_ALIAS, o.rel, o.values ?? inlined);
   return (
     `DELETE FROM ${quoteQualified(o.rel.schema, o.rel.name)} AS ${quoteIdent(ROOT_ALIAS)}` +
-    `${where.length ? ` WHERE ${where.join(" AND ")}` : ""} RETURNING ${returningSql(o.rel, o.returning)}`
+    `${where.length ? ` WHERE ${where.join(" AND ")}` : ""} RETURNING ${returningSql(o.rel, o.returning, o.returningColumns)}`
   );
 };

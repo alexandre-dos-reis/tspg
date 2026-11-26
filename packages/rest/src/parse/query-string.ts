@@ -207,11 +207,13 @@ export const parseQuery = (
     const joined = path.join(".");
     const canonical = known.get(joined);
     if (!canonical) {
+      // PostgREST names the embed it could not find, not the path to it
+      const missing = path.find((_, i) => !known.has(path.slice(0, i + 1).join("."))) ?? path[path.length - 1]!;
       throw new EngineError(
         "not_embedded",
-        `'${joined}' is not an embedded resource in this request`,
+        `'${missing}' is not an embedded resource in this request`,
         null,
-        `Verify that '${joined}' is included in the 'select' query parameter.`,
+        `Verify that '${missing}' is included in the 'select' query parameter.`,
       );
     }
     let p = embeds.get(canonical);

@@ -146,7 +146,10 @@ export const filterSql = (f: Filter, alias: string, rel: Relation | undefined, v
       const cfg = f.lang ? `${literal(f.lang)}, ` : "";
       // PostgREST applies to_tsvector() when the column is not already a tsvector -- a JSON path
       // into one does not change that: the column's own type is what it looks at.
-      const vector = declaredType(rel, f.field.name) === "tsvector" ? lhs : `to_tsvector(${cfg}${lhs})`;
+      // A column it does not know (a computed field) is left as it is, and so is a domain over one.
+      const column = rel?.columns.find((c) => c.name === f.field.name);
+      const vector =
+        !column || (column.baseType ?? column.type.trim()) === "tsvector" ? lhs : `to_tsvector(${cfg}${lhs})`;
       expr = `${vector} @@ ${fn}(${cfg}${scalarSql(f.value as string, f.field, rel, values, false)})`;
       break;
     }

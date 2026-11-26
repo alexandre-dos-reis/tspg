@@ -17,7 +17,7 @@ import { quoteIdent } from "@tspg/core/quote";
 import type { SqlOperation } from "@tspg/core/parse/sql-options";
 import { EngineError } from "@tspg/core/errors";
 import { PgRestError } from "./errors";
-import { getRelation } from "@tspg/core/schema";
+import { getRelation, pgrstKey, relKey } from "@tspg/core/schema";
 import { mediaChoices } from "./media";
 import { keysChecked, parseQuery } from "./parse/query-string";
 import { buildOpenApi } from "./openapi";
@@ -275,12 +275,16 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
       target.type === "root"
         ? "OPTIONS,GET,HEAD"
         : target.type === "rpc"
-          ? "OPTIONS,GET,HEAD,POST"
+          ? // a volatile function is only POSTed to (PostgREST's `RoutineInfoPlan`)
+            (env.cache.functions.get(relKey(schema, target.name))?.[0]?.volatility ?? "volatile") === "volatile"
+            ? "OPTIONS,POST"
+            : "OPTIONS,GET,HEAD,POST"
           : (() => {
               const rel = getRelation(env.cache, schema, target.name);
               const m = ["OPTIONS", "GET", "HEAD"];
               if (rel.insertable) m.push("POST");
-              if (rel.insertable && rel.updatable) m.push("PUT");
+              // PUT addresses a row by its key: none, no PUT
+              if (rel.insertable && rel.updatable && pgrstKey(rel).length > 0) m.push("PUT");
               if (rel.updatable) m.push("PATCH");
               if (rel.deletable) m.push("DELETE");
               return m.join(",");
