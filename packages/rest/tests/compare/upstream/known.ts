@@ -5,77 +5,16 @@
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
 // is removed: the list cannot go stale.
 //
-// The gap is almost entirely one-sided -- 126 requests PostgREST answers and this engine refuses, against **4** it
-// refuses and this engine answers, which is the direction that matters for `packages/rest/PARITY.md`'s hardening
-// claims. Those four, each worth its own look:
-//
-//   GET / with `Accept: text/csv`                    PostgREST 406; the OpenAPI document is served here
-//   PATCH /articles?columns=helicopter               PostgREST PGRST204 on the unknown column; the update runs here
-//   POST /no_pk with a ragged CSV payload            PostgREST PGRST102; the rows are inserted here
-//   POST /rpc/overloaded_unnamed_param with CSV      PostgREST PGRST202; an overload is chosen here
+// Both are about the transport rather than the engine: what is left is the HTTP server's (a CORS preflight) and the
+// request this harness sends (the OpenAPI document names the host it was reached at, and the two engines are reached
+// at different ones).
 
 /** What each cluster of differences comes from. */
 export const CLUSTERS = {
-  "data representations":
-    "the cast functions of a domain (PostgREST's \"data representations\") are not applied: a value is sent to PostgreSQL as it comes, so a representation like `#001100` for an integer-backed domain is refused, and one read back is not rendered",
-  "a media type handled in the database":
-    "a media type whose handler is a function in the database (`pg/outfunc`, `application/vnd.twkb`, `magic/number`, `application/vnd.pgrst.array;nulls=stripped`, a cast to `text/xml`...) is not served here: only the built-in media types and the ones `media` registers are, so such a request is refused with PGRST107 or answered as JSON",
-  "PUT with a single-element array payload":
-    "PostgREST takes both an object and a one-element array as a PUT payload, and reads the request before the payload; this engine requires an object, so it answers PGRST102 where PostgREST answers, or where PostgREST reports what is wrong with the request instead (PGRST105, PGRST114, PGRST115)",
-  "an embed by a name that is not a table":
-    "embedding by a foreign-key constraint name, or by a column name, is not resolved here: PostgREST accepts `select=...,<fk name>(...)` and `select=...,<column>(...)` as embed targets, and resolves an embed through a view to the view's base relation",
-  "an ambiguous embed":
-    "an embed PostgREST resolves is reported as ambiguous here (PGRST201), and where both report it the details differ in shape: PostgREST lists objects (cardinality, embedding, relationship), this engine strings",
-  "a cast after a json arrow":
-    "`->>key::type` casts the key rather than the value, `->` followed by a cast is refused, and on a json array index the cast is dropped altogether, so the value comes back as text",
-  "columns= and the payload":
-    "`columns=` is not the whole of what is written here: a key of the payload outside it is reported (PGRST204) instead of ignored, and an empty or unknown `columns=` is read differently",
-  "an aggregate in a spread embed":
-    "an aggregate inside a spread embed is not grouped by the parent's columns, so the rows come back ungrouped, and an alias given inside a spread embed is not visible to `order=`",
-  "a filter on an embed selected with no columns":
-    "an embed selected with no columns (`clientinfo()`) is not usable as a filter target or inside a logic tree here, and the total of a request filtered that way differs",
-  "an overloaded function":
-    "which overload a call resolves to differs: a set of parameters PostgREST matches is refused here (or the reverse), and an overloaded computed relationship is not resolved",
-  "the wording of an error":
-    "the same failure, with the same code and the same status, but with the message, details or hint split or worded differently",
-  "a filter or an order on a spread embed":
-    "`...embed` combined with a filter or an order on the embed itself (`processes=is.null`, `processes.order=name`) builds SQL that does not compile",
-  "a repeated query parameter":
-    "a parameter given twice (`?name=ignored&name=world`, `v=hi&v=there`) is collected into an array here; PostgREST takes the last one, except for a variadic parameter, whose repetitions are its elements",
-  "OPTIONS":
-    "the `Allow` header of a view or an RPC differs: what PostgREST derives from triggers and auto-updatability",
-  "a function returning record":
-    "a function returning `record` (or `setof record`) needs a column definition list, which is not generated here",
-  "a table without a usable primary key":
-    "a table with no primary key, or one whose primary key is null in the inserted row, gives another `Location` header, and an upsert on it asks for an explicit `on_conflict` here",
-  "an argument of a character type":
-    "an RPC argument of `char(n)` or `bit(n)` is read as `character(1)`/`bit(1)`: the length in the function's signature is not taken into account",
-  "a filter whose target is an embedded resource":
-    "a filter on a column that is also an embed target (`select=...,client:client_id(name)&client_id=eq.2`, `status=eq.3`) is refused here (PGRST120) where PostgREST applies it to the parent column",
-  "fts() on a domain over tsvector":
-    "`fts()` on a column whose type is a domain over tsvector asks for a `to_tsvector` that does not exist",
-  "the RAISE conventions":
-    "a RAISE whose MESSAGE or DETAIL is not the JSON the convention asks for is reported differently: PostgREST explains what the JSON must hold (PGRST121), this engine reports the error it managed to read",
-  "the query string of an RPC":
-    "which parameters of an RPC's query string are arguments and which are filters on its result differs (`?id=5&id=gt.2` is both upstream), a function returning a domain over a composite is not embedded through, and on a POST the query string holds no arguments at all",
-  "privileges through a view":
-    "a write through a view, or a delete whose `select=` reads columns the role cannot read, is refused here where PostgREST runs it: it is not the view owner's privileges that are checked",
-  "the status of an error":
-    "the same failure, with the same code, mapped to another status",
-  "CSV":
-    "CSV differs: a null is written `NULL` rather than left empty, a geometry is rendered differently, and a CSV payload whose lines do not all have the same number of fields is accepted",
-  "a Range header beside limit=":
-    "a `Range` header does not override a `limit=` in the query string here; PostgREST lets the header win",
-  "a backslash in an in-list value":
-    "a backslash inside a quoted `in.(...)` value is kept here; PostgREST drops it",
-  "the Location header of a composite primary key":
-    "`Location` names only the first column of a composite primary key; PostgREST names all of them",
+  OPTIONS:
+    "a CORS preflight (`Origin` and `Access-Control-Request-Method`) is answered by PostgREST's CORS middleware, without an `Allow` header; `handle()` has no CORS layer -- the host's, by design -- and answers the `OPTIONS` itself",
   "the OpenAPI document":
-    "the OpenAPI document differs: PostgREST takes its title and description from the schema's comment and its version from its own, and answers 406 at the root for an Accept it cannot serve",
-  "the total of a filtered request":
-    "the total reported in `Content-Range`, and with it the status (200 or 206), differs",
-  "whitespace in a logic tree":
-    "the spaces PostgREST tolerates inside `and=(...)` / `or=(...)` are read as part of a column name here",
+    "the document names the host it was requested at (`127.0.0.1:<port>` for PostgREST, `localhost` for `handle()` here), and documents the overload of a function PostgREST read last, which follows creation order",
 } as const;
 
 export type Cluster = keyof typeof CLUSTERS;
