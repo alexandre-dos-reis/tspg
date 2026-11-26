@@ -27,10 +27,11 @@ export interface StatementOptions {
   /** Settings to read once the statement is done: they come back as `setting_<n>`, in this order. */
   readonly read?: ReadonlyArray<string> | undefined;
   /**
-   * `source` flags inserted rows in a `pgrst_inserted` column (merge-duplicates upsert). These are the
-   * source's other columns; `none_inserted` says that rows were returned but none was inserted.
+   * `source` counts the rows it really inserted in `pgrst.inserted` (merge-duplicates upsert, `PUT`;
+   * see `countInserted` in `./write`). Read it back as `inserted`: `NULL` when the counter never ran,
+   * which is what an empty payload leaves behind.
    */
-  readonly upsertColumns?: ReadonlyArray<string> | undefined;
+  readonly countInserted?: boolean | undefined;
 }
 
 const bodyExpr = (shape: BodyShape, strip: boolean, render?: string): string => {
@@ -52,30 +53,22 @@ const bodyExpr = (shape: BodyShape, strip: boolean, render?: string): string => 
 
 /**
  * The one statement that runs a call. Result columns:
- * `page_total`, `body`, `total_result_set`, one `setting_<n>` for each name of `read`, and `none_inserted`.
+ * `page_total`, `body`, `total_result_set`, one `setting_<n>` for each name of `read`, and `inserted`.
  *
- * The settings of `read` are read at the end so that functions (RPC, triggers) can answer by calling
- * `set_config`.
+ * The settings of `read` and the counter are read at the end -- after the data-modifying CTE has run,
+ * so that functions (RPC, triggers) can answer by calling `set_config` and the counter is final.
  */
 export const buildStatement = (o: StatementOptions): string => {
-  const up = o.upsertColumns;
-  const ctes = [
-    ...(o.source && up
-      ? [`${ALIAS}_ins AS (${o.source})`, `${ALIAS}_source AS (SELECT ${up.join(", ")} FROM ${ALIAS}_ins)`]
-      : o.source
-        ? [`${ALIAS}_source AS (${o.source})`]
-        : []),
-    `${ALIAS}_body AS (${o.rows})`,
-  ];
+  const ctes = [...(o.source ? [`${ALIAS}_source AS (${o.source})`] : []), `${ALIAS}_body AS (${o.rows})`];
   return (
     `WITH ${ctes.join(", ")} SELECT ` +
     `count(*)::text AS page_total, ` +
     `${bodyExpr(o.shape, Boolean(o.stripNulls), o.render)} AS body, ` +
     `${o.count ? `(${o.count})::text` : "NULL::text"} AS total_result_set, ` +
     (o.read ?? []).map((name, i) => `nullif(current_setting(${literal(name)}, true), '') AS setting_${i}, `).join("") +
-    (up
-      ? `(EXISTS (SELECT 1 FROM ${ALIAS}_ins) AND NOT EXISTS (SELECT 1 FROM ${ALIAS}_ins WHERE ${ALIAS}_inserted)) AS none_inserted `
-      : `false AS none_inserted `) +
+    (o.countInserted
+      ? `nullif(current_setting('pgrst.inserted', true), '')::int AS inserted `
+      : `NULL::int AS inserted `) +
     `FROM ${ALIAS}_body AS _t`
   );
 };

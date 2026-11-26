@@ -50,7 +50,7 @@ What each side hands the core, and what it takes back:
 | **Output format** | `Negotiated` (`json`, `object`, `csv`, `geojson`, `handler`, `openapi`, `plan`) from `Accept`, turned by `toEngineFormat` into the core's `json` / `object` / `rendered { sql }`; the CSV, GeoJSON and handler SQL is `rest`'s (`render.ts`) | `json`, or `object` with `single` |
 | **SqlCall** | `{ settings, before }`, built in `rest/src/http.ts`: the `request.*` settings (`requestSettings`) and `preRequest`, which is told the `Request` | `{ before }` only, built in `query.ts` from `preRequest`, which is told the role, claims, method and path: there is no request, so no `request.*` setting |
 | **Planning and execution** | `planTable` / `planRpc`, then `execute` | the same calls, on the same code |
-| **What comes back** | a `SqlResult` (`body`, `rows`, `total`, `settings`, `noneInserted`), which `buildOutcome` (`rest/src/outcome.ts`) turns into an `Outcome` (`status`, `headers`, `text`), and `toResponse` adds `Content-Type`, `Vary`, `HEAD`, `bytea` and makes the `Response` | the same `SqlResult`: `shownBody(plan, body)` is `JSON.parse`d into `data`, and `total` is the `count`. There is no status and no header |
+| **What comes back** | a `SqlResult` (`body`, `rows`, `total`, `settings`, `inserted`), which `buildOutcome` (`rest/src/outcome.ts`) turns into an `Outcome` (`status`, `headers`, `text`), and `toResponse` adds `Content-Type`, `Vary`, `HEAD`, `bytea` and makes the `Response` | the same `SqlResult`: `shownBody(plan, body)` is `JSON.parse`d into `data`, and `total` is the `count`. There is no status and no header |
 | **Failures** | `EngineError.reason` and SQLSTATE become a PostgREST status and `PGRSTxxx` code in `toApiError` (`rest/src/errors.ts`) | `EngineError.reason` and SQLSTATE become a `kind` in `describeFailure` (`query/src/kinds.ts`) |
 | **Beyond one call** | content negotiation, `Range`, plans, `OPTIONS`, the OpenAPI document, custom media types | `transaction()` and `setContextQuery()`; the typed layer; at build time `introspect` and the generators (`types.ts`) |
 
@@ -93,8 +93,8 @@ carries a `Sql` prefix (`SqlRequestContext`, `SqlQueryParams`, `SqlCall`, `SqlRe
    and issues only the half of the `set_config` that is per statement — the `search_path`, the call's own `settings` (the
    `request.*` ones, for `rest`) and the time zone, then the call's `before`. `READ ONLY` and the replay belong to the scope, which is the only thing holding the boundary.
 5. **SqlResult** (`core.execute` returns it). The rows the statement made (`body`), how many (`rows`), the count the call asked for
-   (`total`, per `Preferences.count`), the settings the plan asked to read afterwards (`settings`) and whether an upsert
-   inserted nothing (`noneInserted`). Nothing is parsed and nothing is HTTP. `range_not_satisfiable` is raised here,
+   (`total`, per `Preferences.count`), the settings the plan asked to read afterwards (`settings`) and how many rows an
+   upsert really inserted (`inserted`, `undefined` when nothing counted them). Nothing is parsed and nothing is HTTP. `range_not_satisfiable` is raised here,
    since it is about the offset and the count.
 6. **Outcome** (`rest/src/outcome.ts`, `buildOutcome`). `@tspg/rest` alone turns the `SqlResult` into PostgREST's answer: the
    status (`201`, `204`, `206`…), `Content-Range`, `Location`, `Preference-Applied`, the headers and status a function set

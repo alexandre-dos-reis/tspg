@@ -1,4 +1,4 @@
-import { ALIAS, ROOT_ALIAS } from "../constants";
+import { ROOT_ALIAS } from "../constants";
 import { EngineError } from "../errors";
 import type { FilterNode } from "../parse/filter";
 import { quoteIdent, quoteQualified } from "../quote";
@@ -45,10 +45,43 @@ export interface InsertOptions {
   readonly onConflict?: ReadonlyArray<string> | undefined;
   readonly resolution?: "merge-duplicates" | "ignore-duplicates" | undefined;
   readonly missingDefault?: boolean | undefined;
-  /** Flag really-inserted rows (`pgrst_inserted`) of a merge-duplicates upsert; see `upsertColumns`. */
-  readonly flagInserted?: boolean | undefined;
+  /**
+   * Count the rows an upsert really inserted, in `pgrst.inserted`; read back by
+   * {@link buildStatement}. Set for a merge-duplicates upsert and for `PUT`, as PostgREST does
+   * (`isInsert && (isPut || resolution == MergeDuplicates)`): it is what tells `201` from `200`.
+   */
+  readonly countInserted?: boolean | undefined;
   readonly returning: Returning;
 }
+
+/**
+ * The columns of `ON CONFLICT (…)`: those of `on_conflict=`, or the primary key. The target itself is
+ * the database's to check -- PostgREST forwards it, and an unknown column comes back as `42703`.
+ */
+const conflictTarget = (onConflict: ReadonlyArray<string> | undefined, rel: Relation): string[] =>
+  onConflict && onConflict.length > 0 ? [...onConflict] : [...rel.pk];
+
+/**
+ * PostgREST's counter of really-inserted rows (`addConfigPgrstInserted` in `SqlFragment.hs`): a
+ * predicate that is **always true** and moves `pgrst.inserted` by one. It goes on the `WHERE` of the
+ * insert's source (`+1`, once per candidate row) and on the `WHERE` of `DO UPDATE` (`-1`, once per
+ * row that turned out to exist), so what remains is the number of rows actually inserted.
+ *
+ * Each sentinel is the one value its own `set_config` cannot return at that point: after `+1` the
+ * counter is at least 1, so it is never `'0'`; a row only reaches `DO UPDATE` after being counted,
+ * so after `-1` it is at least 0 and never `'-1'`. The predicate is therefore true for every row,
+ * and filters nothing.
+ *
+ * `set_config(…, true)` is transaction-local: the counter cannot outlive the request on a pooled
+ * connection.
+ *
+ * The alternative -- `xmax = 0` on the returned rows, which tells an inserted tuple from an updated
+ * one -- reads a **table** system column, so it cannot work through a view, a partitioned table or a
+ * foreign table. PostgREST does not use it, and neither does this.
+ */
+const countingPredicate = (add: boolean): string =>
+  `set_config('pgrst.inserted', (coalesce(nullif(current_setting('pgrst.inserted', true), '')::int, 0) ` +
+  `${add ? "+" : "-"} 1)::text, true) <> '${add ? "0" : "-1"}'`;
 
 /**
  * `INSERT … RETURNING …`. The payload is `$1` (JSON text, an array of objects);
@@ -65,6 +98,11 @@ export const buildInsert = (o: InsertOptions): string => {
   }
   checkColumns(rel, cols);
 
+  // PostgREST counts for `PUT` and for merge-duplicates only; `ignore-duplicates` never updates, so
+  // every row it keeps is an insert and there is nothing to tell apart.
+  const counting = Boolean(o.countInserted) && o.resolution === "merge-duplicates";
+  const counted = (select: string, add: boolean) => (counting ? `${select} WHERE ${countingPredicate(add)}` : select);
+
   if (o.rows.length === 0) {
     // An empty array inserts nothing.
     const first = rel.columns[0];
@@ -73,11 +111,17 @@ export const buildInsert = (o: InsertOptions): string => {
   }
 
   if (cols.length === 0) {
-    // Only empty objects: insert default rows.
-    const first = rel.columns[0];
-    if (!first) throw new EngineError("invalid_body", "Cannot insert into a relation without columns");
-    const values = o.rows.map(() => "(DEFAULT)").join(", ");
-    return `INSERT INTO ${target} (${quoteIdent(first.name)}) VALUES ${values || "(DEFAULT)"} RETURNING ${returning}`;
+    // Only empty objects: one all-defaults row per element of the payload. No column list and a
+    // **zero-column** SELECT, which is what PostgREST emits (`INSERT INTO t SELECT FROM …`): a
+    // `VALUES (DEFAULT)` list would leave the counter nowhere to sit, and `ON CONFLICT` nothing to
+    // hang on. With no column to set, both resolutions are `DO NOTHING` -- as in PostgREST, where
+    // `MergeDuplicates` with no columns is `DO NOTHING` too.
+    const keys = conflictTarget(o.onConflict, rel);
+    const nothing = o.resolution
+      ? ` ON CONFLICT${keys.length ? ` (${keys.map(quoteIdent).join(", ")})` : ""} DO NOTHING`
+      : "";
+    const defaults = `SELECT FROM json_array_elements(($1::text)::json)`;
+    return `INSERT INTO ${target} ${counted(defaults, true)}${nothing} RETURNING ${returning}`;
   }
 
   const colList = cols.map(quoteIdent).join(", ");
@@ -101,8 +145,7 @@ export const buildInsert = (o: InsertOptions): string => {
 
   let conflict = "";
   if (o.resolution) {
-    const keys = o.onConflict && o.onConflict.length > 0 ? o.onConflict : rel.pk;
-    // the target is the database's to check (PostgREST forwards it: an unknown column is `42703`)
+    const keys = conflictTarget(o.onConflict, rel);
     const targetCols = keys.length ? ` (${keys.map(quoteIdent).join(", ")})` : "";
     if (o.resolution === "ignore-duplicates") {
       conflict = ` ON CONFLICT${targetCols} DO NOTHING`;
@@ -114,29 +157,17 @@ export const buildInsert = (o: InsertOptions): string => {
           `"${rel.name}" has no primary key; pass on_conflict=<columns>`,
         );
       }
-      conflict = ` ON CONFLICT${targetCols} DO UPDATE SET ${cols
-        .map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`)
-        .join(", ")}`;
+      // The counter goes down here, once per row that turned out to exist: what the two `WHERE`
+      // clauses leave in `pgrst.inserted` is the number of rows actually inserted.
+      conflict =
+        ` ON CONFLICT${targetCols} DO UPDATE SET ` +
+        counted(cols.map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`).join(", "), false);
     }
   } else if (o.onConflict && o.onConflict.length > 0) {
     // on_conflict without a resolution preference has no effect (as in PostgREST).
   }
 
-  // A merge-duplicates upsert flags which rows were really inserted (xmax = 0), so the
-  // response can be 200 instead of 201 when it only updated existing rows.
-  const flag =
-    o.flagInserted && o.resolution === "merge-duplicates"
-      ? `, (${quoteIdent(ROOT_ALIAS)}.xmax = 0) AS ${ALIAS}_inserted`
-      : "";
-  const ret = flag && returning === "1" ? `1 AS ${ALIAS}_one` : returning;
-  return `INSERT INTO ${target} (${colList}) ${select}${conflict} RETURNING ${ret}${flag}`;
-};
-
-/** Columns of `buildInsert`'s output without the `pgrst_inserted` marker, for a merge-duplicates upsert. */
-export const upsertColumns = (rel: Relation, returning: Returning): string[] => {
-  if (returning === "representation") return rel.columns.map((c) => quoteIdent(c.name));
-  if (returning === "pk" && rel.pk.length > 0) return rel.pk.map(quoteIdent);
-  return [`${ALIAS}_one`];
+  return `INSERT INTO ${target} (${colList}) ${counted(select, true)}${conflict} RETURNING ${returning}`;
 };
 
 export interface UpdateOptions {
