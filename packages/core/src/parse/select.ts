@@ -20,6 +20,8 @@ export interface AggregateItem {
   readonly fn: AggregateFn;
   /** `count()` has no column. */
   readonly field?: FieldRef;
+  /** A cast of the column, before it is aggregated: `col::int.sum()`. */
+  readonly fieldCast?: string;
   readonly alias?: string;
   readonly cast?: string;
 }
@@ -66,7 +68,8 @@ const parseItem = (raw: string): SelectItem => {
   let cast: string | undefined;
   let castAt = -1;
   scanTopLevel(s, (i, ch) => {
-    if (ch === ":" && s[i + 1] === ":") {
+    // the cast of an item is the last one, unless it is the column's own, before an aggregate: `a::int.sum()`
+    if (ch === ":" && s[i + 1] === ":" && !/\.(count|sum|avg|max|min)\(\s*\)/i.test(s.slice(i + 2))) {
       castAt = i;
     }
   });
@@ -79,7 +82,7 @@ const parseItem = (raw: string): SelectItem => {
   let alias: string | undefined;
   let aliasAt = -1;
   scanTopLevel(s, (i, ch) => {
-    if (ch === ":") {
+    if (ch === ":" && s[i + 1] !== ":" && s[i - 1] !== ":") {
       aliasAt = i;
       return true;
     }
@@ -102,7 +105,16 @@ const parseItem = (raw: string): SelectItem => {
     if (inner.trim() === "") {
       const dot = head.lastIndexOf(".");
       const fn = (dot >= 0 ? head.slice(dot + 1) : head).trim().toLowerCase();
-      const colPart = dot >= 0 ? head.slice(0, dot) : "";
+      let colPart = dot >= 0 ? head.slice(0, dot) : "";
+      let fieldCast: string | undefined;
+      let fieldCastAt = -1;
+      scanTopLevel(colPart, (i, ch) => {
+        if (ch === ":" && colPart[i + 1] === ":") fieldCastAt = i;
+      });
+      if (fieldCastAt >= 0) {
+        fieldCast = safeType(colPart.slice(fieldCastAt + 2));
+        colPart = colPart.slice(0, fieldCastAt);
+      }
       // a bare `sum()` is not an aggregate: PostgREST reads it as an embedded resource named `sum`
       if (AGGREGATES.has(fn) && (colPart || fn === "count")) {
         if (spread) throw parseError("Cannot spread an aggregate", `in "${raw}"`);
@@ -110,6 +122,7 @@ const parseItem = (raw: string): SelectItem => {
           kind: "aggregate",
           fn: fn as AggregateFn,
           ...(colPart ? { field: parseField(colPart) } : {}),
+          ...(fieldCast ? { fieldCast } : {}),
           ...(alias ? { alias } : {}),
           ...(cast ? { cast } : {}),
         };

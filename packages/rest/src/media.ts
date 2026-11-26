@@ -31,7 +31,8 @@ const aggregateChoices = (
     )
     .map((h) =>
       choiceFor(h.mediaType, h.bytea, {
-        aggregate: quoteQualified(h.schema, h.mediaType),
+        ...(h.send ? { send: h.send } : {}),
+        aggregate: quoteQualified(h.schema, h.aggregate ?? h.mediaType),
         ...(h.argRelation ? { rowType: quoteQualified(h.argRelation.schema, h.argRelation.name) } : {}),
       }),
     );
@@ -59,7 +60,13 @@ export const mediaChoices = (
   const out: MediaChoice[] = [];
   for (const f of fns) {
     if (f.returnMediaType) {
-      out.push(choiceFor(f.returnMediaType.name.toLowerCase(), f.returnMediaType.bytea, {}));
+      out.push(
+        choiceFor(
+          f.returnMediaType.name.toLowerCase(),
+          f.returnMediaType.bytea,
+          f.returnMediaType.send ? { send: f.returnMediaType.send } : {},
+        ),
+      );
     } else if (f.returnRelation && f.returnsSet) {
       out.push(...aggregateChoices(cache, schema, f.returnRelation, !hasSelect));
     }

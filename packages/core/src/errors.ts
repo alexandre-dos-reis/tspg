@@ -57,6 +57,8 @@ export interface EngineErrorData {
   readonly total?: number;
   /** The preferences that were applied before the failure, as the transport reports them. */
   readonly applied?: string;
+  /** `details` is JSON, which a transport may answer as it is (an ambiguous embed's relationships). */
+  readonly json?: boolean;
 }
 
 /** Thrown by the engine (parsers, planners, SQL builders). Each consumer maps it to its own error. */

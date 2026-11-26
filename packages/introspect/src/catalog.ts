@@ -17,6 +17,23 @@ import type {
 const kindOf = (k: string): RelationKind =>
   k === "v" ? "view" : k === "m" ? "matview" : k === "f" ? "foreign" : k === "p" ? "partitioned" : "table";
 
+/**
+ * The function of an implicit cast from `source` to `target`, schema-qualified, when one of the two is
+ * a domain (`typ`, the column's type, is the domain) -- PostgREST's `dataRepresentations`.
+ */
+const castFunctionSql = (source: string, target: string, typ: string): string =>
+  `(SELECT quote_ident(fn.nspname) || '.' || quote_ident(fp.proname)
+      FROM pg_cast pc
+      JOIN pg_proc fp ON fp.oid = pc.castfunc
+      JOIN pg_namespace fn ON fn.oid = fp.pronamespace
+     WHERE ${typ}.typtype = 'd' AND pc.castsource = ${source} AND pc.casttarget = ${target}
+       AND pc.castcontext = 'i' AND pc.castmethod = 'f' AND has_function_privilege(pc.castfunc, 'execute'))`;
+
+/** The binary output function of a domain `t`'s type, unless it is text's (the body is then the text itself). */
+const sendOfSql = (t: string): string =>
+  `(SELECT CASE WHEN ${t}.typsend::regproc::text IN ('textsend', 'varcharsend', 'bpcharsend', 'byteasend', 'json_send')
+                THEN NULL ELSE ${t}.typsend::regproc::text END)`;
+
 const schemaList = (schemas: ReadonlyArray<string>) => `ARRAY[${schemas.map(literal).join(",")}]::text[]`;
 
 const asJson = (inner: string) => `SELECT coalesce(json_agg(r), '[]'::json)::text AS j FROM (${inner}) r`;
@@ -102,27 +119,29 @@ const viewForeignKeys = (fks: ReadonlyArray<ForeignKey>, rows: ReadonlyArray<Vie
     const next = viewCols.get(key)?.get(col);
     return next && depth < 16 ? base(next.key, next.col, depth + 1) : { key, col };
   };
-  /** Every view that exposes all of `cols` of table `tableKey`, with the view-side column names. */
+  /**
+   * Every view that exposes all of `cols` of table `tableKey`, with the view-side column names: one
+   * entry per way of choosing them, when a view exposes one table column under several names
+   * (PostgREST's `expandKeyDepCols`).
+   */
   const exposing = (tableKey: string, cols: ReadonlyArray<string>) => {
     const out: Array<{ schema: string; name: string; cols: string[] }> = [];
     for (const [vkey, m] of viewCols) {
-      const names: string[] = [];
+      const choices: string[][] = [];
       for (const c of cols) {
-        let found: string | undefined;
+        const found: string[] = [];
         for (const [vcol] of m) {
           const b = base(vkey, vcol);
-          if (b.key === tableKey && b.col === c) {
-            found = vcol;
-            break;
-          }
+          if (b.key === tableKey && b.col === c) found.push(vcol);
         }
-        if (found === undefined) break;
-        names.push(found);
+        if (found.length === 0) break;
+        choices.push(found);
       }
-      if (names.length === cols.length) {
-        const [schema, ...rest] = vkey.split(".");
-        out.push({ schema: schema!, name: rest.join("."), cols: names });
-      }
+      if (choices.length !== cols.length) continue;
+      const [schema, ...rest] = vkey.split(".");
+      let combos: string[][] = [[]];
+      for (const options of choices) combos = combos.flatMap((prefix) => options.map((o) => [...prefix, o]));
+      for (const names of combos) out.push({ schema: schema!, name: rest.join("."), cols: names });
     }
     return out;
   };
@@ -192,15 +211,35 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     pos: number;
     enum_labels: string[] | null;
     composite: CompositeRef | null;
+    to_json: string | null;
+    from_json: string | null;
+    from_text: string | null;
+    base_type: string | null;
   }>(
     db,
     `SELECT n.nspname AS schema, c.relname AS "table", a.attname AS name,
             format_type(a.atttypid, a.atttypmod) AS type,
+            CASE WHEN ty.typtype = 'd' THEN
+              (WITH RECURSIVE down(t) AS (
+                      SELECT ty.typbasetype
+                      UNION ALL
+                      SELECT p.typbasetype FROM down JOIN pg_type p ON p.oid = down.t WHERE p.typtype = 'd')
+               SELECT format_type(down.t, NULL) FROM down JOIN pg_type b ON b.oid = down.t WHERE b.typtype <> 'd' LIMIT 1)
+            END AS base_type,
+            ${castFunctionSql("a.atttypid", "'json'::regtype", "ty")} AS to_json,
+            ${castFunctionSql("'json'::regtype", "a.atttypid", "ty")} AS from_json,
+            ${castFunctionSql("'text'::regtype", "a.atttypid", "ty")} AS from_text,
             ${compositeOfSql("a.atttypid")} AS composite,
             ${enumLabelsSql("a.atttypid")} AS enum_labels,
             NOT a.attnotnull AS nullable,
             (a.atthasdef OR a.attidentity <> '') AS has_default,
-            pg_get_expr(d.adbin, d.adrelid) AS default_expr,
+            -- what PostgREST's schema cache reads as the default: a domain's own when the column has
+            -- none, and the sequence of an identity column (\`missing=default\` writes it)
+            CASE
+              WHEN d.adbin IS NULL AND ty.typtype = 'd' THEN pg_get_expr(ty.typdefaultbin, 0)
+              WHEN a.attidentity <> '' THEN format('nextval(%L::regclass)', pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname))
+              ELSE pg_get_expr(d.adbin, d.adrelid)
+            END AS default_expr,
             (a.attgenerated <> '') AS generated,
             a.attidentity::text AS identity,
             col_description(c.oid, a.attnum) AS comment,
@@ -208,6 +247,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
        FROM pg_attribute a
        JOIN pg_class c ON c.oid = a.attrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_type ty ON ty.oid = a.atttypid
        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
       WHERE n.nspname = ANY(${S})
         AND c.relkind IN ('r','v','m','f','p')
@@ -252,9 +292,8 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
 
   // Plain columns of views (and materialized views) and the table column each one is read from,
   // taken from the rewrite rule's target list. PostgREST uses this to follow foreign keys through views.
-  // The DISTINCT ON has to be ordered by its own keys, so the naming order is the outer one: it
-  // decides the order of the foreign keys views add, and which column of a view that exposes one
-  // table column twice is the one a key is built from.
+  // The order is the naming order: it decides the order of the foreign keys views add, and which
+  // column of a view that exposes one table column twice is the one a key is built from.
   const viewRows = await run<{
     vschema: string;
     vname: string;
@@ -264,24 +303,43 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     tcol: string;
   }>(
     db,
-    `SELECT v.vschema, v.vname, v.vcol, v.tschema, v.tname, v.tcol
-       FROM (SELECT DISTINCT ON (vc.oid, m.x[1]::int)
-                    vn.nspname AS vschema, vc.relname AS vname, va.attname AS vcol, va.attnum AS vpos,
-                    tn.nspname AS tschema, tc.relname AS tname, ta.attname AS tcol
-               FROM pg_rewrite rw
-               JOIN pg_class vc ON vc.oid = rw.ev_class AND vc.relkind IN ('v','m')
-               JOIN pg_namespace vn ON vn.oid = vc.relnamespace
-               CROSS JOIN LATERAL regexp_matches(rw.ev_action::text,
-                    ':resno (\\d+) :resname [^:]* :ressortgroupref \\d+ :resorigtbl (\\d+) :resorigcol (\\d+) :resjunk false', 'g')
-                    WITH ORDINALITY AS m(x, ord)
-               JOIN pg_attribute va ON va.attrelid = vc.oid AND va.attnum = m.x[1]::int AND NOT va.attisdropped
-               JOIN pg_class tc ON tc.oid = m.x[2]::oid
-               JOIN pg_namespace tn ON tn.oid = tc.relnamespace
-               JOIN pg_attribute ta ON ta.attrelid = tc.oid AND ta.attnum = m.x[3]::int
-              WHERE vn.nspname = ANY(${S}) AND rw.rulename = '_RETURN' AND m.x[2]::oid <> 0
-              -- the last match for a column wins the DISTINCT ON, so this inner order is the rule's
-              ORDER BY vc.oid, m.x[1]::int, m.ord DESC) v
-      ORDER BY v.vschema, v.vname, v.vpos`,
+    // Only the view's own target list: the rule's node tree also holds the target lists of its
+    // subqueries, whose columns are numbered from 1 too, and a scan of the whole tree mistakes one of
+    // theirs for one of the view's. The tree is turned into JSON the way PostgREST's
+    // `allViewsKeyDependencies` does (replace() calls tuned on large schemas -- see the comments
+    // there), and the first query's `targetList` is read from it.
+    `WITH views AS (
+            SELECT c.oid AS view_id, n.nspname AS vschema, c.relname AS vname, r.ev_action AS def
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_rewrite r ON r.ev_class = c.oid AND r.rulename = '_RETURN'
+             WHERE c.relkind IN ('v','m') AND n.nspname = ANY(${S})
+          ),
+          as_json AS (
+            SELECT view_id, vschema, vname,
+                   replace(replace(replace(replace(replace(replace(replace(regexp_replace(
+                   replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(
+                     def::text,
+                     '<>', '()'), ',', ''), E'\\\\{', ''), E'\\\\}', ''),
+                     ' :targetList ', ',"targetList":'), ' :resno ', ',"resno":'),
+                     ' :resorigtbl ', ',"resorigtbl":'), ' :resorigcol ', ',"resorigcol":'),
+                     '{', '{ :'), '((', '{(('), '({', '{({'),
+                     ' :[^}{,]+', ',"":', 'g'),
+                     ',"":}', '}'), ',"":,', ','), '{(', '('), '{,', '{'), '(', '['), ')', ']'), ' ', ','
+                   )::json AS def
+              FROM views
+          ),
+          entries AS (
+            SELECT view_id, vschema, vname, json_array_elements(def->0->'targetList') AS entry FROM as_json
+          )
+     SELECT e.vschema, e.vname, va.attname AS vcol, tn.nspname AS tschema, tc.relname AS tname, ta.attname AS tcol
+       FROM entries e
+       JOIN pg_attribute va ON va.attrelid = e.view_id AND va.attnum = (e.entry->>'resno')::int AND NOT va.attisdropped
+       JOIN pg_class tc ON tc.oid = (e.entry->>'resorigtbl')::oid
+       JOIN pg_namespace tn ON tn.oid = tc.relnamespace
+       JOIN pg_attribute ta ON ta.attrelid = tc.oid AND ta.attnum = (e.entry->>'resorigcol')::int
+      WHERE (e.entry->>'resorigtbl')::oid <> 0
+      ORDER BY e.vschema, e.vname, va.attnum`,
   );
 
   // Views whose own query has an outer join, and whose columns therefore cannot inherit the source
@@ -334,7 +392,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     rows: number;
     arg_rel: { schema: string; name: string } | null;
     ret_rel: { schema: string; name: string } | null;
-    ret_media: { name: string; bytea: boolean } | null;
+    ret_media: { name: string; bytea: boolean; send?: string } | null;
     return_enum: string[] | null;
     return_composite: CompositeRef | null;
     args: Array<{ name: string; type: string; mode: string; enum: string[] | null; composite: CompositeRef | null }>;
@@ -351,13 +409,15 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
             obj_description(p.oid, 'pg_proc') AS comment,
             p.prorows::float8 AS rows,
             CASE WHEN rt.typtype = 'd' AND rt.typname LIKE '%/%'
-                 THEN json_build_object('name', rt.typname, 'bytea', rt.typbasetype = 'bytea'::regtype) END AS ret_media,
+                 THEN json_strip_nulls(json_build_object('name', rt.typname, 'bytea', rt.typbasetype = 'bytea'::regtype, 'send', ${sendOfSql("rt")})) END AS ret_media,
             (SELECT json_build_object('schema', n2.nspname, 'name', c2.relname)
                FROM pg_type t2 JOIN pg_class c2 ON c2.oid = t2.typrelid JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
               WHERE p.pronargs = 1 AND t2.oid = p.proargtypes[0] AND c2.relkind IN ('r','v','m','f','p')) AS arg_rel,
             (SELECT json_build_object('schema', n2.nspname, 'name', c2.relname)
                FROM pg_type t2 JOIN pg_class c2 ON c2.oid = t2.typrelid JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
-              WHERE t2.oid = p.prorettype AND c2.relkind IN ('r','v','m','f','p')) AS ret_rel,
+              -- a domain over a table's row type returns that table's rows
+              WHERE t2.oid = CASE WHEN rt.typtype = 'd' THEN rt.typbasetype ELSE p.prorettype END
+                AND c2.relkind IN ('r','v','m','f','p')) AS ret_rel,
             (SELECT coalesce(json_agg(json_build_object(
                        'name', coalesce(p.proargnames[t.i], ''),
                        'type', format_type(t.typ, NULL),
@@ -439,32 +499,40 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       ORDER BY 1, 2`,
   );
 
+  // Media type handlers, as PostgREST's `mediaHandlers` finds them: an aggregate of one argument -- a
+  // row of a relation, or `anyelement` -- whose return type is a domain named like a media type.
   const handlerRows = await run<{
     schema: string;
     name: string;
+    media_type: string;
     arg_rel: { schema: string; name: string } | null;
     bytea: boolean;
+    send: string | null;
   }>(
     db,
-    `SELECT n.nspname AS schema, p.proname AS name,
+    `SELECT n.nspname AS schema, p.proname AS name, lower(rt.typname) AS media_type, ${sendOfSql("rt")} AS send,
             (SELECT json_build_object('schema', n2.nspname, 'name', c2.relname)
                FROM pg_type t2 JOIN pg_class c2 ON c2.oid = t2.typrelid JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
               WHERE t2.oid = p.proargtypes[0] AND c2.relkind IN ('r','v','m','f','p')) AS arg_rel,
             rt.typbasetype = 'bytea'::regtype AS bytea
        FROM pg_proc p
+       JOIN pg_aggregate agg ON agg.aggfnoid = p.oid
        JOIN pg_namespace n ON n.oid = p.pronamespace
        JOIN pg_type rt ON rt.oid = p.prorettype AND rt.typtype = 'd'
       WHERE n.nspname = ANY(${S})
-        AND p.prokind = 'a' AND p.pronargs = 1 AND p.proname LIKE '%/%'
+        AND p.pronargs = 1
+        AND (rt.typname ~* '^[A-Za-z0-9.-]+/[A-Za-z0-9.\\+-]+$' OR rt.typname = '*/*')
         AND (p.proargtypes[0] = 'anyelement'::regtype
-             OR EXISTS (SELECT 1 FROM pg_type t3 JOIN pg_class c3 ON c3.oid = t3.typrelid WHERE t3.oid = p.proargtypes[0]))
-      ORDER BY 1, 2`,
+             OR EXISTS (SELECT 1 FROM pg_class c3 WHERE c3.reltype = p.proargtypes[0] AND c3.relkind IN ('r','v','m','f','p')))
+      ORDER BY 1, 3, 2`,
   );
   const mediaHandlers: MediaHandler[] = handlerRows.map((h) => ({
     schema: h.schema,
-    mediaType: h.name.toLowerCase(),
+    mediaType: h.media_type,
+    ...(h.name.toLowerCase() !== h.media_type ? { aggregate: h.name } : {}),
     ...(h.arg_rel ? { argRelation: h.arg_rel } : {}),
     bytea: h.bytea,
+    ...(h.send ? { send: h.send } : {}),
   }));
 
   // ---- assemble ----
@@ -549,6 +617,16 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
           : {}),
       comment: c.comment,
       position: c.pos,
+      ...(c.base_type ? { baseType: c.base_type } : {}),
+      ...(c.to_json || c.from_json || c.from_text
+        ? {
+            representation: {
+              ...(c.to_json ? { toJson: c.to_json } : {}),
+              ...(c.from_json ? { fromJson: c.from_json } : {}),
+              ...(c.from_text ? { fromText: c.from_text } : {}),
+            },
+          }
+        : {}),
     });
     colsByRel.set(key, list);
   }
@@ -574,6 +652,27 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     return undefined;
   };
 
+  // The key of a view as PostgREST's schema cache reads it (`addViewPrimaryKeys`): the primary key of
+  // every table behind it whose key the view exposes whole, outer join or not. It does not tell a row
+  // from a set -- `viewPk` does that -- but it is what PostgREST's `Location` and `PUT` are made of,
+  // so `@tspg/rest` answers with it.
+  const pgrstViewPk = (key: string): string[] | undefined => {
+    const exposed = new Map<string, string>();
+    for (const col of colsByRel.get(key) ?? []) {
+      const src = col.source;
+      const at = src ? `${relKey(src.schema, src.table)}.${src.column}` : undefined;
+      if (at && !exposed.has(at)) exposed.set(at, col.name);
+    }
+    const names: string[] = [];
+    for (const tableKey of new Set([...exposed.keys()].map((k) => k.slice(0, k.lastIndexOf("."))))) {
+      const cols = (pk.get(tableKey) ?? []).map((c) => exposed.get(`${tableKey}.${c}`));
+      // no part of a key: PostgREST keeps a key only when the view exposes all of it
+      if (cols.length === 0 || cols.some((n) => n === undefined)) continue;
+      for (const n of cols as string[]) if (!names.includes(n)) names.push(n);
+    }
+    return names.length ? names : undefined;
+  };
+
   const relations = new Map<string, Relation>();
   for (const r of relRows) {
     const key = relKey(r.schema, r.name);
@@ -583,6 +682,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       kind: kindOf(r.kind),
       columns: colsByRel.get(key) ?? [],
       pk: pk.get(key) ?? viewPk(key) ?? [],
+      ...(pk.has(key) ? {} : { pgrstPk: pgrstViewPk(key) ?? [] }),
       uniques: uniques.get(key) ?? [],
       insertable: (r.bits & 8) === 8,
       updatable: (r.bits & 4) === 4,
@@ -610,7 +710,12 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       ...(f.return_enum ? { returnEnumLabels: f.return_enum } : {}),
       ...(f.return_composite ? { returnComposite: f.return_composite } : {}),
       returnsSet: f.returns_set,
-      returnsComposite: f.has_out || f.return_typtype === "c" || f.return_type === "record",
+      returnsComposite:
+        f.has_out ||
+        f.return_typtype === "c" ||
+        f.return_type === "record" ||
+        (f.return_typtype === "d" && f.ret_rel !== null),
+      ...(f.return_type === "record" && !f.has_out ? { returnsAnonymousRecord: true } : {}),
       returnsVoid: f.return_type === "void",
       volatility: f.volatility === "i" ? "immutable" : f.volatility === "s" ? "stable" : "volatile",
       comment: f.comment,

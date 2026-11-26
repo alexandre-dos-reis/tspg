@@ -18,13 +18,15 @@ const GEOJSON_BODY =
 
 /** A custom media type handler; a binary body comes back hex-encoded. */
 const handlerBody = (h: MediaChoice): string => {
+  // PostgREST reads the result in binary: a type whose binary form is not its text is read through it
+  const text = (v: string) => (h.send ? `convert_from(${h.send}(${v}), 'UTF8')` : `${v}::text`);
   if (h.aggregate) {
     const call = `${h.aggregate}(${h.rowType ? `ROW(_t.*)::${h.rowType}` : "_t"})`;
-    return h.bytea ? `coalesce(encode(${call}::bytea, 'hex'), '')` : `coalesce(${call}::text, '')`;
+    return h.bytea ? `coalesce(encode(${call}::bytea, 'hex'), '')` : `coalesce(${text(call)}, '')`;
   }
   return h.bytea
     ? `coalesce(encode((array_agg(_t.${ALIAS}_scalar::bytea))[1], 'hex'), '')`
-    : `coalesce((array_agg(_t.${ALIAS}_scalar::text))[1], '')`;
+    : `coalesce((array_agg(${text(`_t.${ALIAS}_scalar`)}))[1], '')`;
 };
 
 /** What the engine is told about a negotiated format. */

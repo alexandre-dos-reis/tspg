@@ -60,6 +60,20 @@ export interface Column {
   readonly identity?: "always" | "by-default" | undefined;
   readonly comment: string | null;
   readonly position: number;
+  /** For a column whose type is a domain, the type at the bottom of it (through domains over domains). */
+  readonly baseType?: string | undefined;
+  /**
+   * PostgREST's "data representations": for a column whose type is a domain with implicit casts to or
+   * from `json` or `text` done by a function, those functions, schema-qualified. `toJson` renders the
+   * column in a response, `fromJson` reads it from a payload, `fromText` from a query string value.
+   */
+  readonly representation?:
+    | {
+        readonly toJson?: string | undefined;
+        readonly fromJson?: string | undefined;
+        readonly fromText?: string | undefined;
+      }
+    | undefined;
 }
 
 export type RelationKind = "table" | "view" | "matview" | "foreign" | "partitioned";
@@ -70,6 +84,12 @@ export interface Relation {
   readonly kind: RelationKind;
   readonly columns: ReadonlyArray<Column>;
   readonly pk: ReadonlyArray<string>;
+  /**
+   * For a view, its key as PostgREST reads it: every primary key column of the tables behind it that
+   * it exposes, even part of a key, even across an outer join. What `Location` and `PUT` name; it does
+   * not identify a row the way `pk` does. Absent for a table, whose key is `pk`.
+   */
+  readonly pgrstPk?: ReadonlyArray<string> | undefined;
   readonly uniques: ReadonlyArray<ReadonlyArray<string>>;
   readonly insertable: boolean;
   readonly updatable: boolean;
@@ -110,6 +130,11 @@ export interface FunctionDef {
   readonly returnsSet: boolean;
   /** True if the function returns a composite / record / TABLE(...) row type. */
   readonly returnsComposite: boolean;
+  /**
+   * True if it returns a bare `record` -- no OUT parameter, no `TABLE(...)` -- whose columns only
+   * the call itself knows: it cannot be read in a `FROM` without a column definition list.
+   */
+  readonly returnsAnonymousRecord?: boolean | undefined;
   readonly returnsVoid: boolean;
   readonly volatility: "immutable" | "stable" | "volatile";
   readonly comment: string | null;
@@ -120,18 +145,26 @@ export interface FunctionDef {
   /** Planner row estimate; 1 on a set-returning function makes a computed relationship to-one. */
   readonly rows: number;
   /** Scalar functions returning a domain named like a media type (`"text/plain"`, …): the raw value is the body. */
-  readonly returnMediaType?: { readonly name: string; readonly bytea: boolean };
+  readonly returnMediaType?: { readonly name: string; readonly bytea: boolean; readonly send?: string | undefined };
 }
 
 /** A custom media type handler: an aggregate named after the media type that returns a domain. */
 export interface MediaHandler {
   readonly schema: string;
-  /** The aggregate's name, i.e. the media type (for example `text/plain`, or the catch-all). */
+  /** The media type: the name of the domain the aggregate returns (for example `text/plain`, or the catch-all). */
   readonly mediaType: string;
+  /** The aggregate's own name, when it is not the media type's: PostgREST goes by the type it returns. */
+  readonly aggregate?: string | undefined;
   /** The table whose rows it aggregates, or `undefined` for `anyelement`. */
   readonly argRelation?: { readonly schema: string; readonly name: string };
   /** True when the domain wraps `bytea` (the body is binary). */
   readonly bytea: boolean;
+  /**
+   * The binary output function of the domain's type, when it is not plain text: PostgREST reads a
+   * handler's result in binary, so a `jsonb` one starts with its version byte and an `xml` one is
+   * `xml_send`'s.
+   */
+  readonly send?: string | undefined;
 }
 
 export interface SchemaCache {

@@ -227,12 +227,14 @@ describe.skipIf(!hasDb)("writes", () => {
       // A plain insert of the same nothing is still a creation, as in PostgREST.
       expect((await t.post("/clients", [], { ctx, headers: REP })).status).toBe(201);
     });
-    test("merging without a conflict target on a table with no key is PGRST100", async () => {
+    test("merging without a conflict target on a table with no key is a plain insert", async () => {
+      // PostgREST ignores a resolution it has no key to resolve on, and does not report it as applied
       await t.db.adapter.query("CREATE TABLE api.nokey (a int, b int); GRANT ALL ON api.nokey TO authenticated");
       await t.api.reloadSchema();
       const r = await t.post("/nokey", { a: 1 }, { ctx, headers: { Prefer: "resolution=merge-duplicates" } });
-      expect(r.status).toBe(400);
-      expect(r.json().code).toBe("PGRST100");
+      expect(r.status).toBe(201);
+      expect(r.headers.get("preference-applied")).toBeNull();
+      expect((await t.db.adapter.query("SELECT a FROM api.nokey")).map((x) => x["a"])).toEqual([1]);
     });
   });
 

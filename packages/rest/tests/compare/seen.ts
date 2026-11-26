@@ -43,7 +43,9 @@ export interface SeenOptions {
 }
 
 export const normalize = async (res: Response, options: SeenOptions = {}): Promise<Seen> => {
-  const text = await res.text();
+  // `fetch` decodes a body without its byte order mark, and a `Response` built from a string keeps it:
+  // the bytes on the wire are the same, so neither side's is compared
+  const text = (await res.text()).replace(/^\uFEFF/, "");
   const ct = res.headers.get("content-type");
   let body: unknown = text;
   if (options.ignoreBody) body = "(ignored)";

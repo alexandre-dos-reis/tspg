@@ -111,7 +111,8 @@ export const parseOperatorExpr = (field: FieldRef, expr: string, unquoteValue = 
 
 const parseLogicItem = (raw: string): FilterNode => {
   const item = raw.trim();
-  const m = /^(not\.)?(and|or)\(/.exec(item);
+  // PostgREST allows spaces between the operator and its parenthesis
+  const m = /^(not\.)?(and|or)\s*\(/.exec(item);
   if (m) {
     if (!item.endsWith(")")) throw parseError("Unbalanced parentheses in logic tree", `in "${item}"`);
     const inner = item.slice(m[0].length - 1); // keep "(...)"
@@ -185,7 +186,8 @@ export const parseQuery = (
       select = used === "" ? [{ kind: "star" }] : parseSelect(used);
     } else if (k === "on_conflict" || k === "columns") {
       // the names end up in the statement: they are read with PostgREST's grammar, which ignores what follows
-      const end = v === "" ? 0 : checkFieldList(k, v);
+      // an empty `columns=` is a parse error upstream; an empty `on_conflict=` names no target
+      const end = v === "" && k === "on_conflict" ? 0 : checkFieldList(k, v);
       if (end instanceof EngineError) throw end;
       const names = splitTopLevel(v === "" ? v : v.slice(0, end), ",")
         .map(unquote)
@@ -205,11 +207,13 @@ export const parseQuery = (
     const joined = path.join(".");
     const canonical = known.get(joined);
     if (!canonical) {
+      // PostgREST names the embed it could not find, not the path to it
+      const missing = path.find((_, i) => !known.has(path.slice(0, i + 1).join("."))) ?? path[path.length - 1]!;
       throw new EngineError(
         "not_embedded",
-        `'${joined}' is not an embedded resource in this request`,
+        `'${missing}' is not an embedded resource in this request`,
         null,
-        `Verify that '${joined}' is included in the 'select' query parameter.`,
+        `Verify that '${missing}' is included in the 'select' query parameter.`,
       );
     }
     let p = embeds.get(canonical);
@@ -249,18 +253,12 @@ export const parseQuery = (
       continue;
     }
 
-    // A filter on a column, or `embed=is.null` on an embedded resource itself.
+    // A filter on a column, or `embed=is.null` on an embedded resource itself: the embed is named as
+    // the select names it (its alias, or its target), and anything but `is.null` is a filter on a
+    // column of that name (PostgREST's `addNullEmbedFilters`).
     const embedPath = parts.join(".");
-    if (known.has(embedPath)) {
-      const m = /^(not\.)?is\.null$/.exec(value);
-      if (!m) {
-        throw new EngineError(
-          "invalid_embed_filter",
-          "Embedded resource filter only accepts is.null or not.is.null",
-          null,
-          null,
-        );
-      }
+    const m = /^(not\.)?is\.null$/.exec(value);
+    if (known.get(embedPath) === embedPath && m) {
       paramsFor(parts.slice(0, -1), key).presence.push({
         embed: known.get(embedPath)!.split(".").pop()!,
         present: Boolean(m[1]),

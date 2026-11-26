@@ -4,7 +4,7 @@ import type { ParsedQuery } from "./parse/filter";
 import { OPERATORS_ORDER } from "./parse/syntax";
 import { type SqlOperation, type SqlOutputFormat, type SqlPreferences } from "./parse/sql-options";
 import { literal, quoteIdent } from "./quote";
-import { getRelation, type Relation, type SchemaCache } from "./schema";
+import { getRelation, pgrstKey, type Relation, type SchemaCache } from "./schema";
 import { buildRead } from "./sql/read";
 import { type BodyType, buildRpc, isSingleUnnamedParam, resolveFunction, type RpcCall } from "./sql/rpc";
 import { buildStatement, type BodyShape } from "./sql/statement";
@@ -246,8 +246,14 @@ const effectivePaging = (env: SqlEnv, query: ParsedQuery, range: { offset: numbe
       null,
     );
   }
-  let limit = query.root.limit ?? range?.limit;
-  const offset = query.root.offset ?? range?.offset ?? 0;
+  // PostgREST pages by the intersection of what the query string and the `Range` header ask for
+  const qFrom = query.root.offset ?? 0;
+  const qTo = query.root.limit === undefined ? Infinity : qFrom + query.root.limit;
+  const hFrom = range?.offset ?? 0;
+  const hTo = range?.limit === undefined ? Infinity : hFrom + range.limit;
+  const offset = Math.max(qFrom, hFrom);
+  const to = Math.min(qTo, hTo);
+  let limit = to === Infinity ? undefined : Math.max(0, to - offset);
   const max = env.config.maxRows;
   if (max !== undefined) limit = limit === undefined ? max : Math.min(limit, max);
   return { limit, offset };
@@ -299,7 +305,7 @@ export const planTable = (
       limit,
       pagedRead: paged,
       countInStatement: needCount && paged,
-      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.unpaged : undefined,
+      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.planned : undefined,
       statement: buildStatement({
         rows: read.rows,
         count: needCount && paged ? read.count : undefined,
@@ -325,6 +331,22 @@ export const planTable = (
     return { rows: `SELECT * FROM ${ALIAS}_source`, shape: shapeFor(r) };
   };
 
+  // a representation made of columns only reads those back (PostgREST returns no more)
+  const known = (name: string) => rel.columns.some((c) => c.name === name);
+  const returningColumns =
+    returning === "representation" &&
+    query.select.length > 0 &&
+    query.select.every((i) => i.kind === "field" && known(i.field.name)) &&
+    query.root.order.every((t) => !t.relation && known(t.field.name))
+      ? [
+          ...new Set([
+            ...query.select.map((i) => (i as { field: { name: string } }).field.name),
+            // the representation is ordered as asked, so what it is ordered by comes back too
+            ...query.root.order.map((t) => t.field.name),
+          ]),
+        ]
+      : undefined;
+
   const common = {
     rel,
     readOnly: false,
@@ -336,6 +358,14 @@ export const planTable = (
 
   if (operation === "insert") {
     if (!body) throw new EngineError("invalid_body", "Empty or invalid json");
+    // With `columns=`, PostgREST hands the payload to `json_to_recordset` as it is, and PostgreSQL is the one to refuse it.
+    if (
+      query.columns &&
+      Array.isArray(body.value) &&
+      body.value.some((r) => r === null || typeof r !== "object" || Array.isArray(r))
+    ) {
+      throw new DbQueryError("22023", "argument of json_to_recordset must be an array of objects");
+    }
     const rows = asRows(body.value);
     // Only a merge-duplicates upsert can answer `200` rather than `201`, so only it needs the count
     // (PostgREST: `isInsert && (isPut || resolution == MergeDuplicates)`).
@@ -346,6 +376,7 @@ export const planTable = (
       columns: query.columns,
       onConflict: query.onConflict,
       resolution: prefer.resolution,
+      returningColumns,
       missingDefault: prefer.missing === "default",
       countInserted,
       returning,
@@ -375,13 +406,17 @@ export const planTable = (
     const obj: JsonObject =
       first !== null && typeof first === "object" && !Array.isArray(first) ? (first as JsonObject) : {};
     // the JSON body is `$1` when there is one, and the filters' parameters come after it
-    const values = valuesFor(qp, Object.keys(obj).length ? 1 : 0);
+    const readsBody = (query.columns ?? Object.keys(obj)).length > 0;
+    const values = valuesFor(qp, readsBody ? 1 : 0);
     const updateSql = buildUpdate({
       rel,
       body: obj as JsonObject,
+      columns: query.columns,
+      missingDefault: prefer.missing === "default",
       clauses: qp.setClauses,
       filters: query.root.filters,
       returning,
+      returningColumns,
       values,
     });
     const { rows: outRows, shape } = rowsFor(returning);
@@ -406,7 +441,7 @@ export const planTable = (
       ...common,
       kind: "update",
       returning,
-      params: [...(Object.keys(obj).length ? [JSON.stringify(obj)] : []), ...values.bound],
+      params: [...(readsBody ? [JSON.stringify(obj)] : []), ...values.bound],
       shape,
       statement: buildStatement({
         source: updateSql,
@@ -420,7 +455,7 @@ export const planTable = (
 
   if (operation === "delete") {
     const values = valuesFor(qp, 0);
-    const deleteSql = buildDelete({ rel, filters: query.root.filters, returning, values });
+    const deleteSql = buildDelete({ rel, filters: query.root.filters, returning, returningColumns, values });
     const { rows: outRows, shape } = rowsFor(returning);
     return {
       ...common,
@@ -438,23 +473,15 @@ export const planTable = (
     };
   }
 
-  // PUT: single-row upsert addressed by primary key.
+  // PUT: single-row upsert addressed by primary key. PostgREST reads the request before the payload,
+  // so what is wrong with the filters is reported first.
   if (!body) throw new EngineError("invalid_body", "Empty or invalid json");
-  const row = body.value;
-  if (Array.isArray(row) && !row.every((r) => r !== null && typeof r === "object" && !Array.isArray(r))) {
-    throw new EngineError("invalid_body", "All object keys must match");
-  }
-  if (row === null || typeof row !== "object" || Array.isArray(row)) {
-    throw new EngineError(
-      "invalid_body",
-      "Empty or invalid json",
-      "The payload of a PUT request must be a JSON object",
-    );
-  }
   if (query.root.limit !== undefined || query.root.offset !== undefined) {
     throw new EngineError("limit_offset_on_put", "limit/offset querystring parameters are not allowed for PUT");
   }
-  if (rel.pk.length === 0) {
+  // the key PostgREST addresses a row of a view by is its own (`pgrstKey`)
+  const key = pgrstKey(rel);
+  if (key.length === 0) {
     throw new EngineError(
       "put_requires_pk",
       "Filters must include all and only primary key columns with 'eq' operators",
@@ -469,7 +496,7 @@ export const planTable = (
       !f.quantifier &&
       f.field.json.length === 0 &&
       typeof f.value === "string" &&
-      rel.pk.includes(f.field.name)
+      key.includes(f.field.name)
     ) {
       keyValues.set(f.field.name, f.value);
     } else {
@@ -479,24 +506,44 @@ export const planTable = (
       );
     }
   }
-  if (!rel.pk.every((c) => keyValues.has(c))) {
+  if (!key.every((c) => keyValues.has(c))) {
     throw new EngineError(
       "put_requires_pk",
       "Filters must include all and only primary key columns with 'eq' operators",
     );
   }
-  const obj = row as JsonObject;
-  for (const c of rel.pk) {
-    if (c in obj && String(obj[c]) !== keyValues.get(c)) {
+  const isObject = (r: unknown): r is JsonObject => r !== null && typeof r === "object" && !Array.isArray(r);
+  // PostgREST takes an object or an array of objects, and writes the one row it addresses.
+  if (Array.isArray(body.value) && !body.value.every(isObject)) {
+    throw new EngineError("invalid_body", "All object keys must match");
+  }
+  const matches = (o: JsonObject): boolean => key.every((c) => !(c in o) || String(o[c]) === keyValues.get(c));
+  // PostgREST inserts the rows of the payload the URL's key selects, and refuses unless that is exactly one.
+  let row: unknown = body.value;
+  if (Array.isArray(row)) {
+    const selected = (row as JsonObject[]).filter(matches);
+    if (row.length > 0 && selected.length !== 1) {
       throw new EngineError("payload_key_mismatch", "Payload values do not match URL in primary key column(s)");
     }
+    row = row.length === 0 ? row : selected[0];
   }
-  const full: JsonObject = { ...Object.fromEntries(rel.pk.map((c) => [c, keyValues.get(c)])), ...obj };
+  if (!isObject(row)) {
+    throw new EngineError(
+      "invalid_body",
+      "Empty or invalid json",
+      "The payload of a PUT request must be a JSON object",
+    );
+  }
+  const obj = row;
+  if (!matches(obj)) {
+    throw new EngineError("payload_key_mismatch", "Payload values do not match URL in primary key column(s)");
+  }
+  const full: JsonObject = { ...Object.fromEntries(key.map((c) => [c, keyValues.get(c)])), ...obj };
   // A `PUT` answers `201` when it inserted and `200` when it replaced, so it counts too.
   const putSql = buildInsert({
     rel,
     rows: [full],
-    onConflict: rel.pk,
+    onConflict: key,
     resolution: "merge-duplicates",
     countInserted: true,
     returning,
@@ -574,6 +621,11 @@ export const planRpc = (
         }
       }
     }
+    // `columns=` names the arguments: the other keys of the payload are not passed
+    const named = qp.params.some(([k]) => k === "columns")
+      ? qp.parse({ allowFilterKey: () => false }).columns
+      : undefined;
+    if (named) argValues = Object.fromEntries(Object.entries(argValues).filter(([k]) => named.includes(k)));
   } else {
     // every query parameter that is not a filter, a reserved word or a bare key is an argument
     const lists = new Map<string, string[]>();
@@ -587,20 +639,35 @@ export const planRpc = (
     }
   }
   const provided = Object.keys(argValues);
-  const fn = resolveFunction(env.cache, schema, name, new Set(provided), body !== undefined && write, write, bodyType);
-  // GET: repeated parameters make a list, and a variadic parameter always takes one
-  for (const a of fn.args) {
-    if (a.variadic && getArgKeys.has(a.name) && !Array.isArray(argValues[a.name]))
-      argValues[a.name] = [argValues[a.name]];
+  // only a JSON body can be taken whole by a function's single unnamed json parameter
+  const fn = resolveFunction(
+    env.cache,
+    schema,
+    name,
+    new Set(provided),
+    write && body?.kind === "json",
+    write,
+    bodyType,
+  );
+  // A parameter given twice in a query string or a form is a list for a variadic parameter, which
+  // always takes one, and the last value for any other (PostgREST).
+  const listed = !write || body?.kind === "urlencoded";
+  if (listed) {
+    for (const a of fn.args) {
+      const v = argValues[a.name];
+      if (a.variadic && (getArgKeys.has(a.name) || body?.kind === "urlencoded") && v !== undefined && !Array.isArray(v))
+        argValues[a.name] = [v];
+      else if (!a.variadic && Array.isArray(v)) argValues[a.name] = v[v.length - 1];
+    }
   }
   const rawBody = write && body !== undefined && isSingleUnnamedParam(fn, bodyType);
   const call = buildRpc(env.cache, fn, provided, rawBody, bodyType);
 
   const fnArgNames = new Set(fn.args.map((a) => a.name));
   const query = qp.parse({
-    skip: (k, v) => v === "" && bare.has(k),
-    // On GET, parameters that name function arguments are not filters.
-    allowFilterKey: (k) => write || !fnArgNames.has(k),
+    // On GET, a parameter that names an argument is that argument, unless its value is a filter's:
+    // `?id=5&id=gt.2` passes 5 and filters the result on `id > 2`.
+    skip: (k, v) => (v === "" && bare.has(k)) || (!write && fnArgNames.has(k) && !looksLikeFilter(v)),
   });
   // a single unnamed parameter gets the body as it came, not as it parses
   const argsJson = rawBody ? (body!.raw ?? JSON.stringify(body!.value)) : JSON.stringify(argValues);
@@ -626,7 +693,7 @@ export const planRpc = (
     const read = buildRead({
       cache: env.cache,
       rel: call.relation,
-      from: `(${call.source})`,
+      from: call.fromItem ?? `(${call.source})`,
       query,
       limit,
       offset,
@@ -642,7 +709,7 @@ export const planRpc = (
       limit,
       pagedRead: paged,
       countInStatement: needCount && paged,
-      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.unpaged : undefined,
+      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.planned : undefined,
       shape,
       statement: buildStatement({
         rows: read.rows,
@@ -798,7 +865,7 @@ export const execute = async (
           if (plan.kind === "rpc" && plan.rpc && !plan.rpc.fn.returnsSet) {
             throw new EngineError(
               "max_affected_unsupported",
-              "max-affected preference is only valid for functions that return a set",
+              "Function must return SETOF or TABLE when max-affected preference is used with handling=strict",
               null,
               null,
             );
@@ -872,13 +939,15 @@ const totalOf = (env: SqlEnv, prefer: SqlPreferences, plan: SqlPlan, r: RawResul
   if (prefer.count === "exact") total = plan.countInStatement ? r.total : r.rows;
   else if (prefer.count === "planned") total = r.planned;
   else if (prefer.count === "estimated") {
+    // PostgREST (`readTotal`): the exact count, unless it is above `max-rows` -- and with no
+    // `max-rows` every count is above it (`Just n > Nothing`) -- in which case the larger of the exact
+    // and the planned count.
     const max = env.config.maxRows;
+    const exact = plan.countInStatement ? r.total : r.rows;
     total =
-      max !== undefined && r.planned !== undefined && r.planned > max
-        ? r.planned
-        : plan.countInStatement
-          ? r.total
-          : r.rows;
+      exact !== undefined && (max === undefined || exact > max) && r.planned !== undefined
+        ? Math.max(exact, r.planned)
+        : exact;
   }
   const pagedRead =
     plan.kind === "read" || (plan.pagedRead !== undefined && (plan.shape === "array" || plan.shape === "object"));

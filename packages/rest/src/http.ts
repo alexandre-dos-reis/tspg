@@ -10,6 +10,7 @@ import {
   identityOf,
   planRpc,
   planTable,
+  transactionSetup,
   useSchema,
 } from "@tspg/core/core";
 import type { DbSession } from "@tspg/adapters";
@@ -17,10 +18,10 @@ import { quoteIdent } from "@tspg/core/quote";
 import type { SqlOperation } from "@tspg/core/parse/sql-options";
 import { EngineError } from "@tspg/core/errors";
 import { PgRestError } from "./errors";
-import { getRelation } from "@tspg/core/schema";
+import { getRelation, pgrstKey, relKey } from "@tspg/core/schema";
 import { mediaChoices } from "./media";
 import { keysChecked, parseQuery } from "./parse/query-string";
-import { buildOpenApi } from "./openapi";
+import { ACCESSIBLE_SQL, SCHEMA_DESCRIPTION_SQL, buildOpenApi } from "./openapi";
 import {
   parseAccept,
   parseBody,
@@ -174,11 +175,16 @@ const toResponse = (
   }
 
   const noBody = status === 204 || status === 304 || text === "" || method === "HEAD";
+  // a `Content-Type` a function set in `response.headers` has the last word
+  const chosen = Object.keys(headers).some((k) => k.toLowerCase() === "content-type");
   if (
+    !chosen &&
     !(
       status === 204 ||
       status === 304 ||
-      (text === "" && method !== "HEAD" && !(format.kind === "handler" && plan.kind === "read"))
+      (text === "" &&
+        method !== "HEAD" &&
+        !(format.kind === "handler" && (plan.kind === "read" || plan.kind === "rpc")))
     )
   )
     headers["Content-Type"] = contentType;
@@ -224,6 +230,22 @@ export const bareKeys = (search: string): Set<string> => {
   return out;
 };
 
+/** Whether an insert into this table has something to resolve a conflict on: `on_conflict=`, or a primary key. */
+const hasConflictTarget = (env: HttpEnv, schema: string, name: string, qp: SqlQueryParams): boolean => {
+  let rel;
+  try {
+    rel = getRelation(env.cache, schema, name);
+  } catch {
+    return true; // the table's own error is the planner's to report
+  }
+  if (rel.pk.length > 0) return true;
+  try {
+    return (qp.parse({ allowFilterKey: () => false }).onConflict?.length ?? 0) > 0;
+  } catch {
+    return true;
+  }
+};
+
 const readSchema = (env: HttpEnv, request: Request, method: Method): string =>
   useSchema(
     env,
@@ -241,7 +263,7 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
   const url = new URL(request.url);
   const target = parseTarget(url.pathname, env.config.basePath);
   const schema = readSchema(env, request, method);
-  const prefer = parsePrefer(request.headers.get("prefer"));
+  let prefer = parsePrefer(request.headers.get("prefer"));
   const invalid = [...prefer.invalid];
   const honoredTx = env.config.allowTxOverride;
   if (prefer.tx && !honoredTx) invalid.push(`tx=${prefer.tx}`);
@@ -259,12 +281,16 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
       target.type === "root"
         ? "OPTIONS,GET,HEAD"
         : target.type === "rpc"
-          ? "OPTIONS,GET,HEAD,POST"
+          ? // a volatile function is only POSTed to (PostgREST's `RoutineInfoPlan`)
+            (env.cache.functions.get(relKey(schema, target.name))?.[0]?.volatility ?? "volatile") === "volatile"
+            ? "OPTIONS,POST"
+            : "OPTIONS,GET,HEAD,POST"
           : (() => {
               const rel = getRelation(env.cache, schema, target.name);
               const m = ["OPTIONS", "GET", "HEAD"];
               if (rel.insertable) m.push("POST");
-              if (rel.insertable && rel.updatable) m.push("PUT");
+              // PUT addresses a row by its key: none, no PUT
+              if (rel.insertable && rel.updatable && pgrstKey(rel).length > 0) m.push("PUT");
               if (rel.updatable) m.push("PATCH");
               if (rel.deletable) m.push("DELETE");
               return m.join(",");
@@ -277,10 +303,29 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
       throw new PgRestError(405, "PGRST117", `Unsupported HTTP method: ${method}`);
     if (!env.config.openApi) throw new PgRestError(404, "PGRST126", "Root endpoint metadata is disabled");
     parseAccept(request.headers.get("accept"), true);
-    const doc = buildOpenApi(env.cache, schema, {
-      serverUrl: env.config.serverUrl ?? url.origin,
-      basePath: env.config.basePath,
+    // what the role can reach, and the schema's comment, are read as the role, per request (PostgREST's
+    // `accessibleTables` and `schemaDescription`)
+    const setup = transactionSetup(env, ctx);
+    const { accessible, schemaDescription } = await env.adapter.transaction(async (s) => {
+      await s.query("SET TRANSACTION READ ONLY");
+      await s.query(setup.sql, setup.params);
+      const tables = await s.query(ACCESSIBLE_SQL, [schema]);
+      const description = await s.query(SCHEMA_DESCRIPTION_SQL, [schema]);
+      return {
+        accessible: new Set(tables.map((r) => String(r["name"]))),
+        schemaDescription: (description[0]?.["d"] as string | null | undefined) ?? null,
+      };
     });
+    const doc = buildOpenApi(
+      env.cache,
+      schema,
+      {
+        serverUrl: env.config.serverUrl ?? url.origin,
+        basePath: env.config.basePath,
+        searchPath: [schema, ...env.config.extraSearchPath],
+      },
+      { accessible, schemaDescription },
+    );
     return new Response(method === "HEAD" ? null : JSON.stringify(doc), {
       status: 200,
       headers: { "Content-Type": "application/openapi+json; charset=utf-8" },
@@ -305,8 +350,6 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
   if (target.type === "rpc" && method !== "GET" && method !== "HEAD" && method !== "POST") {
     throw new PgRestError(405, "PGRST101", `Cannot use the ${method} method on RPC`);
   }
-  const body = await parseBody(request, method, target.type === "rpc");
-
   const pairs = queryPairs(url.search);
   const bare = bareKeys(url.search);
   // a key without `=` is no filter on a table; it is an argument of a function
@@ -320,13 +363,24 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
         allowFilterKey: options?.allowFilterKey,
       }),
   };
-  let plan: SqlPlan;
-  if (target.type === "table") {
-    // PostgREST reads the query string before it looks for the table: a syntax error is answered first
+  // PostgREST reads the query string before the payload and before it looks for the table: a syntax
+  // error is answered first. A GET on a function cannot be read yet -- which of its parameters are
+  // arguments depends on the function.
+  if (target.type === "table" || method === "POST") {
     try {
       qp.parse();
     } catch (e) {
       if (e instanceof EngineError && e.reason === "invalid_input") throw e;
+    }
+  }
+  const body = await parseBody(request, method, target.type === "rpc");
+  let plan: SqlPlan;
+  if (target.type === "table") {
+    // PostgREST ignores a resolution it has nothing to resolve on -- no `on_conflict=`, no primary key --
+    // inserts, and does not report it as applied
+    if (method === "POST" && prefer.resolution && !hasConflictTarget(env, schema, target.name, qp)) {
+      const { resolution: _ignored, ...rest } = prefer;
+      prefer = rest;
     }
     plan = planTable(env, operationOf(method), schema, target.name, qp, prefer, engineFormat, range, body);
   } else {

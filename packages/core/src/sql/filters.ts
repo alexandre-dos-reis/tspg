@@ -37,10 +37,20 @@ const JSON_TYPE = /^jsonb?(\[\])*$/i;
  * know the type of, stay literals. A value compared with the result of a JSON path takes
  * the type of that path: text for `->>` (bound), jsonb for `->` (a literal).
  */
-const scalarSql = (value: string, field: FieldRef, rel: Relation | undefined, values: Values): string => {
+const scalarSql = (
+  value: string,
+  field: FieldRef,
+  rel: Relation | undefined,
+  values: Values,
+  /** Read the value through the column's data representation, as PostgREST does for all but `like`, `is`, `isdistinct` and `fts`. */
+  parse = true,
+): string => {
   // the result of a JSON path has the type of its last step: text for `->>`, jsonb for `->`
   if (field.json.length > 0)
     return field.json[field.json.length - 1]!.arrow === "->>" ? values.sql(value) : literal(value);
+  // a domain with a data representation reads the query string's text through its own function
+  const fromText = parse ? rel?.columns.find((c) => c.name === field.name)?.representation?.fromText : undefined;
+  if (fromText) return `${fromText}((${values.sql(value)})::text)`;
   const type = declaredType(rel, field.name);
   if (type === undefined || JSON_TYPE.test(type)) return literal(value);
   return values.sql(value);
@@ -55,10 +65,10 @@ const scalarSql = (value: string, field: FieldRef, rel: Relation | undefined, va
  * (`item=eq.(sock,17)`) is left alone: Postgres cannot read one without a type, and PostgREST
  * answers `0A000` for it, so that stays as it is.
  */
-const valueSql = (value: string, field: FieldRef, rel: Relation | undefined, values: Values): string => {
+const valueSql = (value: string, field: FieldRef, rel: Relation | undefined, values: Values, parse = true): string => {
   const column = field.json.length === 0 ? rel?.columns.find((c) => c.name === field.name) : undefined;
   if (!column?.composite || column.type.trim().endsWith("[]") || !value.trimStart().startsWith("{")) {
-    return scalarSql(value, field, rel, values);
+    return scalarSql(value, field, rel, values, parse);
   }
   const type = quoteQualified(column.composite.schema, column.composite.name);
   return `json_populate_record(null::${type}, (${literal(value)})::json)`;
@@ -126,7 +136,7 @@ export const filterSql = (f: Filter, alias: string, rel: Relation | undefined, v
       break;
     }
     case "isdistinct":
-      expr = `${lhs} IS DISTINCT FROM ${valueSql(f.value as string, f.field, rel, values)}`;
+      expr = `${lhs} IS DISTINCT FROM ${valueSql(f.value as string, f.field, rel, values, false)}`;
       break;
     case "fts":
     case "plfts":
@@ -136,16 +146,20 @@ export const filterSql = (f: Filter, alias: string, rel: Relation | undefined, v
       const cfg = f.lang ? `${literal(f.lang)}, ` : "";
       // PostgREST applies to_tsvector() when the column is not already a tsvector -- a JSON path
       // into one does not change that: the column's own type is what it looks at.
-      const vector = declaredType(rel, f.field.name) === "tsvector" ? lhs : `to_tsvector(${cfg}${lhs})`;
-      expr = `${vector} @@ ${fn}(${cfg}${scalarSql(f.value as string, f.field, rel, values)})`;
+      // A column it does not know (a computed field) is left as it is, and so is a domain over one.
+      const column = rel?.columns.find((c) => c.name === f.field.name);
+      const vector =
+        !column || (column.baseType ?? column.type.trim()) === "tsvector" ? lhs : `to_tsvector(${cfg}${lhs})`;
+      expr = `${vector} @@ ${fn}(${cfg}${scalarSql(f.value as string, f.field, rel, values, false)})`;
       break;
     }
     default: {
       const sqlOp = COMPARISON[f.op]!;
       const value = patternValue(f.op, f.value as string);
+      const parse = f.op !== "like" && f.op !== "ilike";
       expr = f.quantifier
-        ? `${lhs} ${sqlOp} ${f.quantifier.toUpperCase()} (${scalarSql(value, f.field, rel, values)})`
-        : `${lhs} ${sqlOp} ${valueSql(value, f.field, rel, values)}`;
+        ? `${lhs} ${sqlOp} ${f.quantifier.toUpperCase()} (${scalarSql(value, f.field, rel, values, parse)})`
+        : `${lhs} ${sqlOp} ${valueSql(value, f.field, rel, values, parse)}`;
     }
   }
   return f.negate ? `NOT (${expr})` : expr;

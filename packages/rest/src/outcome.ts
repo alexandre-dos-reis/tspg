@@ -1,5 +1,6 @@
 import { EngineError } from "@tspg/core/errors";
 import { type SqlEnv, type SqlPlan, type SqlResult, shownBody } from "@tspg/core/core";
+import { pgrstKey } from "@tspg/core/schema";
 import { PgRestError } from "./errors";
 import type { Prefer } from "./request";
 
@@ -119,9 +120,15 @@ export const buildOutcome = (
       status = prefer.resolution === "merge-duplicates" && inserted <= 0 ? 200 : 201;
       if (ret === "pk") {
         const rows = JSON.parse(r.body || "[]") as Array<Record<string, unknown>>;
-        const pk = plan.rel?.pk ?? [];
+        const pk = plan.rel ? pgrstKey(plan.rel) : [];
         if (rows.length === 1 && pk.length > 0) {
-          const q = pk.map((c) => `${encodeURIComponent(c)}=eq.${encodeURIComponent(String(rows[0]![c]))}`).join("&");
+          // a key column the row left null is named as PostgREST names it: `is.null`
+          const q = pk
+            .map((c) => {
+              const v = rows[0]![c];
+              return `${encodeURIComponent(c)}=${v === null || v === undefined ? "is.null" : `eq.${encodeURIComponent(String(v))}`}`;
+            })
+            .join("&");
           headers["Location"] = `/${encodeURIComponent(plan.rel!.name)}?${q}`;
         }
       }

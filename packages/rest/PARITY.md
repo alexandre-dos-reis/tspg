@@ -49,7 +49,8 @@ pg-rest is a **library**: the HTTP server, JWT and config-file layers of PostgRE
 | Non-numeric `limit`/`offset` ignored, negative `limit` → `PGRST103`, unsupported methods → empty 405                                      | ✅     |                                                                                                                                                                                                                                                                                          |
 | `Accept: application/json`, `text/csv`, `application/vnd.pgrst.object+json` (+ `nulls=stripped`)                                          | ✅     | Singular → `PGRST116`                                                                                                                                                                                                                                                                    |
 | `application/vnd.pgrst.plan` (EXPLAIN output)                                                                                             | ✅     | `for=` and `options=`; off unless `planEnabled` (like `db-plan-enabled`)                                                                                                                                                                                                                 |
-| Custom media type handlers: aggregates named after a media type (per table or `anyelement`, incl. the `*/*` catch-all) returning a domain | ✅     | `text/plain`, `text/xml`, `application/octet-stream`, …                                                                                                                                                                                                                                  |
+| Custom media type handlers: aggregates returning a domain named after a media type (per table or `anyelement`, incl. the `*/*` catch-all) | ✅     | Found by the domain they return, as PostgREST does, whatever the aggregate is called; the result is read the way PostgREST reads it, in binary (a `jsonb` domain keeps its version byte). A `*/*` handler takes any media type no other one does                                         |
+| Data representations (a domain's implicit casts to/from `json`/`text` done by a function)                                                 | ✅     | Applied on output, to filter values (not to `like`/`ilike`/`is`/`fts`) and to payloads, as PostgREST does                                                                                                                                                                                |
 | `application/geo+json`                                                                                                                    | ✅     | `FeatureCollection` via PostGIS `ST_AsGeoJSON(record)`; needs PostGIS in your database. Compared against PostgREST on the same PostGIS, including a NULL geometry, which 3.4 renders `{"type": null}` and 3.6 renders `null`                                                             |
 | `Prefer: handling=strict/lenient`                                                                                                         | ✅     |                                                                                                                                                                                                                                                                                          |
 | `Prefer: timezone=`                                                                                                                       | ✅     |                                                                                                                                                                                                                                                                                          |
@@ -94,20 +95,21 @@ pg-rest is a **library**: the HTTP server, JWT and config-file layers of PostgRE
 
 ## Functions (RPC)
 
-| Feature                                                                                                        | Status | Notes                                    |
-| -------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------- |
-| `POST /rpc/fn` with JSON body, `GET` with query string args                                                    | ✅     | Typed from the function signature        |
-| Default arguments                                                                                              | ✅     |                                          |
-| Return shapes: scalar, composite, `SETOF`, `RETURNS TABLE`, `void` (204)                                       | ✅     |                                          |
-| Filtering, `select`, `order`, paging, `count` on set results                                                   | ✅     |                                          |
-| Single unnamed `json`/`jsonb` parameter takes the whole body                                                   | ✅     |                                          |
-| Overloads, `PGRST202` / `PGRST203`                                                                             | ✅     |                                          |
-| `GET` only for non-volatile functions (read-only transaction)                                                  | ✅     |                                          |
-| `VARIADIC` parameters                                                                                          | ✅     |                                          |
-| Bulk call (array body)                                                                                         | ✅     | `PGRST102` when the objects' keys differ |
-| `response.headers` / `response.status` GUCs set by the function                                                | ✅     |                                          |
-| `Prefer: max-affected` on RPC                                                                                  | ✅     | `PGRST128` for non-set functions         |
-| Scalar-function custom media types (a domain named `text/plain`, `application/octet-stream`, … as return type) | ✅     | Text and `bytea` bodies                  |
+| Feature                                                                                                        | Status | Notes                                                                               |
+| -------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------- |
+| `POST /rpc/fn` with JSON body, `GET` with query string args                                                    | ✅     | Typed from the function signature                                                   |
+| Default arguments                                                                                              | ✅     |                                                                                     |
+| Return shapes: scalar, composite, `SETOF`, `RETURNS TABLE`, `void` (204)                                       | ✅     |                                                                                     |
+| Filtering, `select`, `order`, paging, `count` on set results                                                   | ✅     |                                                                                     |
+| Single unnamed `json`/`jsonb` parameter takes the whole body                                                   | ✅     |                                                                                     |
+| Overloads, `PGRST202` / `PGRST203`                                                                             | ✅     | Resolved as PostgREST's `findProc`; the "Perhaps you meant" hint is its fuzzy match |
+| Functions returning a bare `record`, `char(n)`/`bit(n)` arguments                                              | ✅     | Called in the select list; arguments read as `character varying`/`bit varying`      |
+| `GET` only for non-volatile functions (read-only transaction)                                                  | ✅     |                                                                                     |
+| `VARIADIC` parameters                                                                                          | ✅     |                                                                                     |
+| Bulk call (array body)                                                                                         | ✅     | `PGRST102` when the objects' keys differ                                            |
+| `response.headers` / `response.status` GUCs set by the function                                                | ✅     |                                                                                     |
+| `Prefer: max-affected` on RPC                                                                                  | ✅     | `PGRST128` for non-set functions                                                    |
+| Scalar-function custom media types (a domain named `text/plain`, `application/octet-stream`, … as return type) | ✅     | Text and `bytea` bodies                                                             |
 
 ## Errors
 
@@ -128,7 +130,7 @@ pg-rest is a **library**: the HTTP server, JWT and config-file layers of PostgRE
 
 | Feature                                                         | Status | Notes                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAPI (Swagger 2.0) at `/`                                    | 🟡     | Tables, views, RPC, parameters, definitions; no security definitions, may differ in detail from PostgREST                                                                                                                                                                                                                                     |
+| OpenAPI (Swagger 2.0) at `/`                                    | 🟡     | A port of PostgREST's `OpenAPI.hs`: the relations the role can reach, read per request, the title and description from the schema's comment, the same formats, notes and parameters. No security definitions (there is no JWT); the overload documented for a function may differ, PostgREST's following creation order                       |
 | `OPTIONS` / CORS                                                | 🟡     | `OPTIONS` handled with `Allow`; CORS headers are the host's responsibility                                                                                                                                                                                                                                                                    |
 | Schema cache from `pg_catalog`                                  | ✅     | Tables, views, columns, PK/UK/FK, functions, comments                                                                                                                                                                                                                                                                                         |
 | Domain types, enums, range/array types                          | 🟡     | Passed through as Postgres returns them; only common types tested                                                                                                                                                                                                                                                                             |
@@ -151,15 +153,11 @@ Three layers:
    fixture database (316 relations, 81 of them views, 353 functions, against the 6 views the fixture here has) and replays
    1 295 requests harvested from its own `test/spec`: every one whose block runs on an `AppConfig` this harness reproduces,
    whose headers and body are literal, and that needs no JWT. Their expectations are not used -- the pinned binary is the
-   expectation. **1 043 answer identically**; the 251 that do not are listed, cluster by cluster, in
-   `packages/rest/tests/compare/upstream/known.ts`, and one is skipped because its `order=` leaves ties.
+   expectation. **1 292 answer identically**; the 2 that do not are listed in `packages/rest/tests/compare/upstream/known.ts`,
+   and one is skipped because its `order=` leaves ties. Both are the transport's rather than the engine's: a CORS preflight
+   (the host's job, by design) and the OpenAPI document, which names the host it was reached at.
 
-   The gap is almost entirely one-sided: 126 of those requests PostgREST answers and this engine refuses, against **4** it
-   refuses and this engine answers (named at the top of `known.ts` -- the direction that matters for the hardening claims
-   above). The largest clusters are a domain's cast functions ("data representations"), media types whose handler is a
-   function in the database, a PUT payload given as a one-element array, embedding by a name that is not a table (a
-   foreign-key constraint name, a column), ambiguity reported where PostgREST resolves it, a cast after a json arrow,
-   `columns=` not bounding what is written, and aggregates inside a spread embed.
+   When it was first run, 251 differed. What closed them is listed under "Differences found by the comparison and fixed".
 
 ```sh
 mise install   # the pinned binary, see mise.toml; or fetch it yourself:
@@ -196,6 +194,18 @@ Then, all previously listed as known differences: CSV of array columns (now Post
 PostgREST quotes it), `limit=abc` ignored rather than `PGRST100`, `order=rel(col)` on a relation that is not embedded (`PGRST108`),
 `merge-duplicates` upsert that only updates returning `200`, the `details` of an invalid JSON body, a single unnamed `json` parameter
 given an array body with differing keys, `Accept: text/csv` on a scalar function result, and `TRACE` answering with an empty body.
+
+Then, on PostgREST's own requests: a `PUT` payload given as an array; `columns=` as the whole of what a write reads and
+sets; `missing=default` through a domain's default and an identity column; a resolution with no conflict target ignored;
+a view's key as PostgREST reads it (`Location`, `PUT`, `Allow`); casts after a JSON arrow; `Range` and `limit=` intersected;
+`count=estimated` with no `max-rows`; overloads resolved as `findProc` does, non-callable functions left out, a bare
+`record` and `char(n)` arguments; a repeated query parameter; relationships as PostgREST's schema cache holds them (an embed
+by constraint or column name, one-to-one from both ends, many-to-many only through two constraints in the junction's key,
+a view's columns read from its own target list only, a view column per relationship when one is repeated); the details
+and hint of an ambiguous or missing embed; aggregates hoisted out of a to-one spread; an embed's `is.null` in a logic tree
+and on spreads; data representations; media type handlers found by the domain they return and read in binary; the
+`RAISE SQLSTATE 'PGRST'` convention and the SQLSTATE statuses of `mapSQLtoHTTP`; `count=planned` on PostgREST's count
+query; and the OpenAPI document.
 
 ### Configuration differences used by the comparison
 

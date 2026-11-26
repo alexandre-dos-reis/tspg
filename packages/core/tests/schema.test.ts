@@ -88,6 +88,9 @@ describe.skipIf(!hasDb)("schema introspection", () => {
     expect(col("id").nullable).toBe(true);
     // and no primary key is borrowed either
     expect(getRelation(cache, "api", "orders_with_client").pk).toEqual([]);
+    // but PostgREST's own key of the view (`addViewPrimaryKeys`) has no such exclusion: it is what
+    // `@tspg/rest` names a row of the view by, in `Location` and `PUT`
+    expect(getRelation(cache, "api", "orders_with_client").pgrstPk).toEqual(["id"]);
   });
 
   test("a view borrows from a table whose schema is not exposed", () => {
