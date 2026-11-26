@@ -1,6 +1,7 @@
 ---
 "@tspg/rest": minor
 "@tspg/query": minor
+"@tspg/tanstack-db-postgrest": minor
 ---
 
 feat: `close()` closes the database driver, a new `onClose` option takes that over, and the `db`
@@ -12,6 +13,10 @@ what `onClose` is handed and what the docs call it:
 ```ts
 const api = await createRest({ adapter: nodePostgresAdapter(pool), schemas: ["api"] });
 ```
+
+`@tspg/tanstack-db-postgrest`'s `generate()` takes its catalog source the same way --
+`generate({ adapter, schemas })`, not `{ db, schemas }`. `tspg-db generate` is unaffected: it is a
+command line.
 
 `rest.close()` and `db.close()` now call the adapter's own `close()` — `pool.end()`, `sql.end()`,
 `pglite.close()`; nothing for an adapter that has none — so the driver created for an instance no

@@ -1,6 +1,7 @@
 ---
 "@tspg/rest": patch
 "@tspg/query": patch
+"@tspg/tanstack-db-postgrest": patch
 ---
 
 fix: introspection reads constraints and view columns in a stable order

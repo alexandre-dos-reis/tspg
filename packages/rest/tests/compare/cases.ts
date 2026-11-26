@@ -471,6 +471,90 @@ const allCases: Case[] = [
       name: "merge-duplicates inserting a new row",
     },
   ),
+  // What an upsert really inserted, which is what tells 201 from 200 -- on a view as much as on a
+  // table (a view has no `xmax`), and when there is nothing to count at all.
+  write(
+    "POST",
+    "/big_orders?on_conflict=id",
+    { id: 900, client_id: 1, total: 250 },
+    {
+      headers: { Prefer: "resolution=merge-duplicates, return=representation, tx=rollback", ...J },
+      name: "upsert on a view, inserting",
+    },
+  ),
+  write(
+    "POST",
+    "/big_orders?on_conflict=id",
+    { id: 1, client_id: 1, total: 260 },
+    {
+      headers: { Prefer: "resolution=merge-duplicates, return=representation, tx=rollback", ...J },
+      name: "upsert on a view, updating",
+    },
+  ),
+  write("POST", "/clients?on_conflict=email", [], {
+    headers: { Prefer: "resolution=merge-duplicates, return=representation, tx=rollback", ...J },
+    name: "upsert merge-duplicates with an empty array",
+  }),
+  write("POST", "/clients", [], {
+    headers: { ...rep, ...J },
+    name: "plain insert with an empty array",
+  }),
+  write(
+    "PUT",
+    "/clients?id=eq.1",
+    { id: 1, name: "Ada3", email: "ada@example.com" },
+    {
+      headers: { ...rep, ...J },
+      name: "put updating an existing row",
+    },
+  ),
+  write(
+    "PUT",
+    "/clients?id=eq.900",
+    { id: 900, name: "Brand new", email: "new900@example.com" },
+    {
+      headers: { ...rep, ...J },
+      name: "put inserting a new row",
+    },
+  ),
+  write(
+    "PUT",
+    "/big_orders?id=eq.901",
+    { id: 901, client_id: 1, total: 300 },
+    {
+      headers: { ...rep, ...J },
+      name: "put on a view, inserting",
+    },
+  ),
+  write("POST", "/moods?on_conflict=id", [{}], {
+    headers: { Prefer: "resolution=merge-duplicates, return=representation, tx=rollback", ...J },
+    name: "upsert of an empty object (default row)",
+  }),
+  write("POST", "/moods", [{}], {
+    headers: { ...rep, ...J },
+    name: "plain insert of an empty object",
+  }),
+  write(
+    "POST",
+    "/big_orders?on_conflict=id",
+    { id: 902, client_id: 1, total: 250 },
+    {
+      headers: { Prefer: "resolution=merge-duplicates, return=minimal, tx=rollback", ...J },
+      name: "upsert on a view, inserting, minimal",
+    },
+  ),
+  write(
+    "POST",
+    "/big_orders?on_conflict=id",
+    [
+      { id: 1, client_id: 1, total: 260 },
+      { id: 903, client_id: 1, total: 270 },
+    ],
+    {
+      headers: { Prefer: "resolution=merge-duplicates, return=representation, tx=rollback", ...J },
+      name: "upsert on a view, one updating one inserting",
+    },
+  ),
   write("POST", "/clients?columns=name,email&select=name,email", [{ name: "A", email: "a@x" }, { name: "B" }], {
     headers: { Prefer: "return=representation, missing=default, tx=rollback", ...J },
     name: "bulk insert with columns + missing=default",

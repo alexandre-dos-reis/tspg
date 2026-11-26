@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Point the examples at the local build instead of the published @tspg/rest and @tspg/query, without committing anything local
+# Point the examples at the local build instead of the published @tspg packages, without committing anything local
 # (so check-example-versions.ts stays happy).
 #   scripts/link-examples.sh                      all examples
 #   scripts/link-examples.sh with-better-auth     just one (or rest/with-better-auth)
 #   scripts/link-examples.sh --unlink             back to the version in package.json
 #
 # The examples depend on the packages by version, and that version is usually not on the registry yet, so a plain
-# `bun install` would 404 before it ever got to `bun link`. The other dependencies are installed with the @tspg
-# packages held out of package.json, which is then put straight back.
+# `bun install` would 404. The other dependencies are installed with the @tspg packages held out of package.json,
+# which is then put straight back, and a copy of each built package is placed in node_modules.
 set -euo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -28,9 +28,6 @@ done
 
 if [ "$unlink" = 0 ]; then
   bun run build >/dev/null   # the examples import ./dist, so it has to exist
-  for pkgdir in packages/rest packages/query; do
-    (cd "$pkgdir" && bun link >/dev/null)   # register "@tspg/rest" and "@tspg/query" once, globally
-  done
 fi
 
 for name in "${names[@]}"; do
@@ -70,16 +67,32 @@ for name in "${names[@]}"; do
 
   for pkg in $pkgs; do
     # Symlinks over the version dependency; package.json is left alone.
-    (cd "$dir" && bun link "$pkg" >/dev/null)
-
+    # A copy of the built package (what `npm pack` would ship), not `bun link`: that resolves the version on the
+    # registry first, which fails for a package that has not been published yet. Not a symlink either: a linked
+    # package resolves its peers (@tanstack/db) from its own folder, and the example would then hold two copies.
+    rm -rf "$dir/node_modules/$pkg"
+    mkdir -p "$dir/node_modules/$pkg"
+    cp -R "packages/${pkg#@tspg/}/package.json" "packages/${pkg#@tspg/}/dist" "$dir/node_modules/$pkg/"
     # `bun link` can report success while leaving nothing usable behind (a stale global registration points
     # somewhere else, or the link lands but dist/ is absent), so the result is checked rather than assumed.
     link="$dir/node_modules/$pkg"
-    [ -L "$link" ] || { echo "FAIL $name: $link is not a symlink -- is 'bun link' registered in packages/?" >&2; exit 1; }
-    [ -f "$link/package.json" ] || { echo "FAIL $name: $link -> $(readlink "$link") is dangling" >&2; exit 1; }
+    [ -f "$link/package.json" ] || { echo "FAIL $name: $link has no package.json" >&2; exit 1; }
     [ -f "$link/dist/index.js" ] || { echo "FAIL $name: $link has no dist/index.js -- run 'bun run build'" >&2; exit 1; }
     (cd "$dir" && node -e "import(\"$pkg\")" 2>/dev/null) ||
       { echo "FAIL $name: $pkg is linked but does not resolve" >&2; exit 1; }
-    echo "linked   $name: $pkg -> $(readlink "$link")"
+    # what npm would have put in node_modules/.bin for the package's `bin`
+    node -e '
+      const fs = require("node:fs"), path = require("node:path");
+      const [dir, pkg] = process.argv.slice(1);
+      const { bin } = JSON.parse(fs.readFileSync(path.join(dir, "node_modules", pkg, "package.json"), "utf8"));
+      for (const [cmd, file] of Object.entries(bin ?? {})) {
+        const link = path.join(dir, "node_modules", ".bin", cmd);
+        fs.mkdirSync(path.dirname(link), { recursive: true });
+        fs.rmSync(link, { force: true });
+        fs.symlinkSync(path.relative(path.dirname(link), path.join(dir, "node_modules", pkg, file)), link);
+        fs.chmodSync(path.join(dir, "node_modules", pkg, file), 0o755);
+      }
+    ' "$dir" "$pkg"
+    echo "linked   $name: $pkg (copy of packages/${pkg#@tspg/})"
   done
 done

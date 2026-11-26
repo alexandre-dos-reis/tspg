@@ -82,8 +82,8 @@ pg-rest is a **library**: the HTTP server, JWT and config-file layers of PostgRE
 | `columns=`                                                               | ✅     | `PGRST204` for unknown columns                                      |
 | `Prefer: missing=default`                                                | ✅     |                                                                     |
 | `Prefer: return=minimal/headers-only/representation`                     | ✅     | `Location` header on insert                                         |
-| Upsert: `resolution=merge-duplicates / ignore-duplicates`, `on_conflict` | ✅     | Status 200 when only existing rows were updated, else 201           |
-| `PUT` single-row upsert                                                  | ✅     | `PGRST114` / `PGRST115` checks                                      |
+| Upsert: `resolution=merge-duplicates / ignore-duplicates`, `on_conflict` | ✅     | 200 when only existing rows were updated, else 201; views included  |
+| `PUT` single-row upsert                                                  | ✅     | `PGRST114` / `PGRST115`; 201 when it inserts, 200 when it replaces  |
 | `PATCH` with filters                                                     | ✅     | Empty body handled                                                  |
 | `DELETE` with filters                                                    | ✅     |                                                                     |
 | `limit`/`offset`/`order` on `PATCH`/`DELETE`                             | ✅     | Ignored, as in PostgREST v16 (`PUT` with limit/offset → `PGRST114`) |
@@ -173,7 +173,9 @@ One, and it is deliberate. The test asserts it still differs, so it cannot go st
 Content-Range on RPC / PATCH responses, `Cannot coerce the result to a single JSON object` text, `406` for unsupported `Accept`,
 `nulls=stripped` media types, `416` carrying `Content-Range` and `Preference-Applied`, `PGRST102` for bulk inserts with differing keys,
 PUT error texts, PGRST202/203 texts, fewer "did you mean" hints, real table names in PostgreSQL error messages, `HEAD` content type,
-embedding by foreign-key column (`c:client_id(*)`), self-reference resolution (table name → children, column name → parent).
+embedding by foreign-key column (`c:client_id(*)`), self-reference resolution (table name → children, column name → parent),
+upsert on a view (`xmax` is a table system column; the rows really inserted are now counted the way PostgREST counts them,
+in a transaction-local `set_config`), `200` for a `merge-duplicates` upsert with nothing to insert, and `201` for a `PUT` that inserts.
 
 Then, all previously listed as known differences: CSV of array columns (now PostgreSQL's own record text, `{a,b}`, quoted exactly as
 PostgREST quotes it), `limit=abc` ignored rather than `PGRST100`, `order=rel(col)` on a relation that is not embedded (`PGRST108`),

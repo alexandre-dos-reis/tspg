@@ -1,6 +1,7 @@
 {
   "include": ["packages/*/src", "packages/*/tests", "tests"],
   "compilerOptions": {
+    "paths": { "@tspg/introspect": ["./packages/introspect/src/index.ts"] },
     "target": "esnext",
     "lib": ["es2023"],
     "moduleDetection": "force",

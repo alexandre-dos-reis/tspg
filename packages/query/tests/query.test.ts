@@ -276,6 +276,29 @@ describe.skipIf(!hasDb)("query()", () => {
       expect((await t.api.select({ table: "products", where: { id: 90 } })).data).toEqual([]);
     });
 
+    test("upsert through a view", async () => {
+      // A view has no system columns, so nothing about the upsert may read one: the count of
+      // really-inserted rows lives in a `set_config` counter. Reading `xmax` instead answered
+      // `42703 column big_orders.xmax does not exist` on the arrangement PostgREST schemas
+      // usually have -- a view exposed over a table that is not.
+      const inserted = await t.api.upsert<{ id: number }>(
+        { table: "big_orders", rows: { id: 910, client_id: 1, total: 250 }, onConflict: ["id"], returning: ["id"] },
+        authed(),
+      );
+      expect(inserted.error).toBeNull();
+      expect(inserted.data).toEqual({ id: 910 });
+
+      const updated = await t.api.upsert<{ total: number }>(
+        { table: "big_orders", rows: { id: 910, client_id: 1, total: 260 }, onConflict: ["id"], returning: ["total"] },
+        authed(),
+      );
+      expect(updated.error).toBeNull();
+      expect(updated.data).toEqual({ total: 260 });
+
+      // the suites share one database: leave the orders as they were found
+      await t.api.delete({ table: "big_orders", where: { id: 910 } }, authed());
+    });
+
     test("an insert of one object whose row never arrives is not_single_row", async () => {
       // the shape comes from `rows`, so a trigger that skips the row leaves the object unsatisfied --
       // the one case where inferring the shape turns an empty answer into an error

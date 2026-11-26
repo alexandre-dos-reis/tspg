@@ -2,10 +2,12 @@
 //   bun run build && node scripts/node-smoke.ts      (Node >= 22.18 strips types natively)
 // Needs TEST_DATABASE_URL (a superuser URL of a throwaway server).
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { createRest } from "../packages/rest/dist/index.js";
 import { createQuery } from "../packages/query/dist/index.js";
+import { buildQuery, compositeKey, tspgClient } from "../packages/tanstack-db-postgrest/dist/index.js";
 import { nodePostgresAdapter } from "../packages/rest/dist/adapters/node-postgres.js";
 
 const admin = process.env["TEST_DATABASE_URL"];
@@ -17,6 +19,12 @@ await adminPool.query(`CREATE DATABASE ${name}`);
 const url = new URL(admin);
 url.pathname = `/${name}`;
 const pool = new pg.Pool({ connectionString: url.toString() });
+
+// `DROP DATABASE ... WITH (FORCE)` below terminates whatever is still connected, and node-postgres
+// turns a connection killed under it into an `error` event on the pool. Unhandled, that is an
+// uncaught exception: the process exits non-zero after every assertion has passed. The handler is
+// what makes the teardown's own noise not a failure -- the assertions above are what this checks.
+for (const p of [pool, adminPool]) p.on("error", () => {});
 
 try {
   await pool.query(readFileSync(new URL("../tests/support/fixture.sql", import.meta.url), "utf8"));
@@ -41,7 +49,7 @@ try {
   const api = { ...createQuery({ ...queryOptions, schema }), handle: rest.handle };
   const call = async (path: string, init: RequestInit = {}) => {
     const res = await api.handle(new Request(`http://localhost${path}`, init));
-    return { status: res.status, body: await res.json().catch(() => null) as any, headers: res.headers };
+    return { status: res.status, body: (await res.json().catch(() => null)) as any, headers: res.headers };
   };
   const json = { "Content-Type": "application/json" };
 
@@ -52,7 +60,11 @@ try {
   assert.equal(read.body[0].orders.length, 2);
 
   // driver errors are mapped by SQLSTATE: unique violation -> 409, missing privilege -> 401
-  const dup = await call("/clients", { method: "POST", headers: { ...json, "x-user": "u1" }, body: JSON.stringify({ name: "Dup", email: "ada@example.com" }) });
+  const dup = await call("/clients", {
+    method: "POST",
+    headers: { ...json, "x-user": "u1" },
+    body: JSON.stringify({ name: "Dup", email: "ada@example.com" }),
+  });
   assert.equal(dup.status, 409);
   assert.equal(dup.body.code, "23505");
   const denied = await call("/clients", { method: "POST", headers: json, body: JSON.stringify({ name: "x" }) });
@@ -60,11 +72,22 @@ try {
   assert.equal(denied.body.code, "42501");
 
   // RLS through the resolved context + transactions that commit and roll back
-  const note = await call("/notes?select=body", { method: "POST", headers: { ...json, "x-user": "alice", Prefer: "return=representation" }, body: JSON.stringify({ body: "hi" }) });
+  const note = await call("/notes?select=body", {
+    method: "POST",
+    headers: { ...json, "x-user": "alice", Prefer: "return=representation" },
+    body: JSON.stringify({ body: "hi" }),
+  });
   assert.equal(note.status, 201);
   assert.deepEqual((await call("/notes?select=body", { headers: { "x-user": "alice" } })).body, [{ body: "hi" }]);
   assert.deepEqual((await call("/notes?select=body", { headers: { "x-user": "bob" } })).body, []);
-  const bad = await call("/clients", { method: "POST", headers: { ...json, "x-user": "u1" }, body: JSON.stringify([{ name: "Fine", email: "fine@x" }, { name: "Dup", email: "ada@example.com" }]) });
+  const bad = await call("/clients", {
+    method: "POST",
+    headers: { ...json, "x-user": "u1" },
+    body: JSON.stringify([
+      { name: "Fine", email: "fine@x" },
+      { name: "Dup", email: "ada@example.com" },
+    ]),
+  });
   assert.equal(bad.status, 409);
   assert.equal((await call("/clients?select=id&email=eq.fine@x")).body.length, 0);
 
@@ -86,6 +109,20 @@ try {
   assert.match(generated, /export type Db = \{/);
   assert.match(generated, /name: string;/);
   assert.match(generated, /export const schema: SchemaDescriptor = /);
+
+  // tanstack-db-postgrest, built: the generator is its command line (`tspg-db`, which reads the catalog itself:
+  // no other @tspg package at run time), and the client module loads on its own
+  const module = execFileSync(
+    process.execPath,
+    [new URL("../packages/tanstack-db-postgrest/dist/bin.js", import.meta.url).pathname, "generate", "--schemas", "api", "--out", "-"],
+    { encoding: "utf8", env: { ...process.env, DATABASE_URL: url.toString() } },
+  );
+  assert.match(module, /export type Database = \{/);
+  assert.match(module, /export const keys = \{/);
+  assert.match(module, /export const collections = /);
+  assert.equal(typeof tspgClient, "function");
+  assert.equal(compositeKey(["a", "b"], { a: 12, b: 3 }), "12_3");
+  assert.match(String(buildQuery(undefined, { select: "id" } as never)), /select=id/);
 
   // RPC + OpenAPI
   assert.equal((await call("/rpc/add?a=40&b=2")).body, 42);
