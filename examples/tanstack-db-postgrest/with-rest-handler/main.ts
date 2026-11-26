@@ -77,5 +77,4 @@ browser.hydrate(state);
 const hydrated = browser.collection(collections({ url: "/api", fetch: counting }).api.todos);
 console.log("hydrated:", hydrated.toArray.map((t) => t.title).join(", "), `(${calls.length - preloaded} request made by the browser)`);
 
-await pgRest.close();
-await pglite.close();
+await pgRest.close(); // closes PGlite too: `onClose: () => {}` is how to keep it open
