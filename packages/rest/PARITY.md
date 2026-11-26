@@ -139,7 +139,7 @@ pg-rest is a **library**: the HTTP server, JWT and config-file layers of PostgRE
 
 ## Verification status
 
-Two layers:
+Three layers:
 
 1. **Own suites** – 190+ tests against a real PostgreSQL 16 (schema, parsing, reads, writes, RPC, request context, security).
 2. **Differential test against PostgREST 16.5** – `packages/rest/tests/compare` starts the real `postgrest` binary and pg-rest on the _same_ database
@@ -147,6 +147,19 @@ Two layers:
    diffing status, `Content-Type`, `Content-Range`, `Location`, `Preference-Applied`, `Allow` and the JSON body (error bodies included).
    10 of them need PostGIS and fail without it; of the other 329, **328 are byte-for-byte equivalent** and one is the known
    difference listed below.
+3. **The same comparison on PostgREST's own ground** -- `packages/rest/tests/compare/upstream.test.ts` loads PostgREST's own
+   fixture database (316 relations, 81 of them views, 353 functions, against the 6 views the fixture here has) and replays
+   1 295 requests harvested from its own `test/spec`: every one whose block runs on an `AppConfig` this harness reproduces,
+   whose headers and body are literal, and that needs no JWT. Their expectations are not used -- the pinned binary is the
+   expectation. **1 043 answer identically**; the 251 that do not are listed, cluster by cluster, in
+   `packages/rest/tests/compare/upstream/known.ts`, and one is skipped because its `order=` leaves ties.
+
+   The gap is almost entirely one-sided: 126 of those requests PostgREST answers and this engine refuses, against **4** it
+   refuses and this engine answers (named at the top of `known.ts` -- the direction that matters for the hardening claims
+   above). The largest clusters are a domain's cast functions ("data representations"), media types whose handler is a
+   function in the database, a PUT payload given as a one-element array, embedding by a name that is not a table (a
+   foreign-key constraint name, a column), ambiguity reported where PostgREST resolves it, a cast after a json arrow,
+   `columns=` not bounding what is written, and aggregates inside a spread embed.
 
 ```sh
 mise install   # the pinned binary, see mise.toml; or fetch it yourself:
@@ -156,13 +169,15 @@ POSTGREST_BIN=/path/to/postgrest TEST_DATABASE_URL=postgres://user@host/postgres
 
 The GeoJSON cases need PostGIS and fail without it. `mise run db:start` gives a cluster that has it.
 
-The comparison only covers what the cases exercise; it is not exhaustive. Anything not in `packages/rest/tests/compare/cases.ts` is unverified against PostgREST.
+The comparison only covers what the cases exercise; it is not exhaustive. Anything not in `packages/rest/tests/compare/cases.ts`
+or `packages/rest/tests/compare/upstream/cases.ts` is unverified against PostgREST.
 Without `POSTGREST_BIN` the whole suite skips silently rather than failing, so a green `bun test` says nothing about parity unless the
 binary was present.
 
 ### Known differences (asserted by the comparison test)
 
-One, and it is deliberate. The test asserts it still differs, so it cannot go stale unnoticed.
+On this repository's own fixture: one, and it is deliberate. (What the upstream fixture adds is in
+`packages/rest/tests/compare/upstream/known.ts`, held to the same rule.) The test asserts it still differs, so it cannot go stale unnoticed.
 
 | Case                                           | PostgREST 16                      | pg-rest                                                     |
 | ---------------------------------------------- | --------------------------------- | ----------------------------------------------------------- |

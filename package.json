@@ -26,6 +26,7 @@
     "check:examples": "bun run scripts/check-example-versions.ts",
     "check:changesets": "bun run scripts/check-changesets.ts",
     "gen:parsed": "bun run scripts/gen-parsed-fixtures.ts",
+    "sync:upstream": "bun run scripts/sync-upstream-fixture.ts",
     "link:examples": "scripts/link-examples.sh",
     "lint": "oxlint packages tests",
     "fmt": "oxfmt packages tests",

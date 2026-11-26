@@ -79,6 +79,7 @@ reference lives in `docs/`.
 | `tests/` | what is no package's: `docs.test.ts` (every `ts` block in the README and `docs/`) and `agnostic.test.ts` (that `packages/*/src` names no runtime or driver, and the examples agree), over the fixture every package's tests share -- `fixture.sql`, its generated types, `db.ts` (a throwaway database) and `tsapi.ts` (the virtual TypeScript project). **No harness here builds either library**: each package's tests reach the fixture as `../../../tests/support/db`, and build their own instance with their own `support/api.ts` |
 | `tests/support/fixture.types.ts` | `generateTypes` output for the fixture, committed: `packages/query/tests/types.test.ts` pins it byte-for-byte and `typecheck` proves it compiles. Regenerate it when the fixture or the generator changes; it is in `.oxfmtrc.json`'s ignore list so the formatter cannot rewrite generated output |
 | `packages/rest/tests/compare/` | differential tests against a real PostgREST 16 binary: `handle()` only, which is why they are the `rest` package's |
+| `packages/rest/tests/compare/upstream/` | the same comparison on PostgREST's own ground, generated from the v16.5 source by `bun run sync:upstream` (`scripts/sync-upstream-fixture.ts`): `fixture.sql` (their `test/spec/fixtures/load.sql`, includes inlined -- 316 relations, 81 views, 353 functions, against the 6 views of `tests/support/fixture.sql`), `cases.ts` (the 1 295 requests of their `test/spec/Feature/**/*.hs` that can be replayed as they are: a block whose `AppConfig` this harness reproduces, literal headers and body, no JWT), `load.ts` (loads the fixture into one throwaway database) and `known.ts` (the 251 differences that stand, by cluster). Their *expectations* are deliberately not harvested -- the pinned binary is the expectation. Both generated files are committed, so the suite needs no network; regenerate only when the pinned version moves |
 | `examples/rest/with-*`, `examples/query/with-*`, `examples/tanstack-db-postgrest/with-*` | independent runnable examples, one folder per package (`@tspg/rest`, `@tspg/query`, `@tspg/tanstack-db-postgrest`), each with its own `package.json`. `link:examples` puts a copy of each built package in the example's `node_modules` (a symlink would give the example two copies of `@tanstack/db`) |
 | `bench/` | load tests vs PostgREST (see `bench/README.md`) |
 | `scripts/` | `check-example.sh` (end-to-end check of an example), `node-smoke.ts`, `check-example-versions.ts`, `link-examples.sh`, `githooks/pre-commit` |
@@ -99,6 +100,7 @@ bun test               # unit + integration; integration tests need TEST_DATABAS
 bun run test:compare   # needs POSTGREST_BIN and TEST_DATABASE_URL
 bun run bench          # see bench/README.md
 bun run check:examples # every example depends on the packages it uses at their version (--fix rewrites them)
+bun run sync:upstream  # refresh packages/rest/tests/compare/upstream/ from the pinned PostgREST source
 bun run link:examples  # point the examples at the local build, without touching their package.json
 ```
 

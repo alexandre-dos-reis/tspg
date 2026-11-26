@@ -8,6 +8,8 @@
     "dist",
     "node_modules",
     "bun.lock",
-    "tests/support/fixture.types.ts"
+    "tests/support/fixture.types.ts",
+    "packages/rest/tests/compare/upstream/cases.ts",
+    "packages/rest/tests/compare/upstream/known.ts"
   ]
 }

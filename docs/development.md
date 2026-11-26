@@ -20,6 +20,10 @@ POSTGREST_BIN=/path/to/postgrest TEST_DATABASE_URL=... bun run test:compare
 bun run typecheck && bun run lint && bun run fmt:check && bun run build
 ```
 
+`bun run sync:upstream` refreshes what `packages/rest/tests/compare/upstream/` holds (the fixture SQL and the harvested
+requests) from the PostgREST source of the version `mise.toml` pins -- a download, or `--from <checkout>`. Both files are
+committed, so the suite needs no network, and running it is only needed when that version moves.
+
 Integration tests are **skipped** without `TEST_DATABASE_URL`, and the differential ones without `POSTGREST_BIN`, so a
 green `bun test` with neither proves little. Each suite creates and drops its own database: never point it at data you
 care about.
@@ -29,6 +33,7 @@ care about.
 | | |
 | --- | --- |
 | `packages/rest/tests/compare` | hundreds of requests replayed against the real PostgREST 16.5 binary, statuses, headers and bodies compared. Run it whenever you touch parsing, SQL generation, error codes or headers |
+| `packages/rest/tests/compare/upstream.test.ts` | the same comparison on PostgREST's own ground: its fixture database (316 relations, 81 of them views, 353 functions) and the 1 295 requests of its own `test/spec`, taken from the v16.5 source by `bun run sync:upstream`. Their expectations are not used -- the pinned binary is the expectation -- and the differences that stand are listed, cluster by cluster, in `compare/upstream/known.ts` |
 | `packages/rest/tests/*` | the behaviour of `handle()`, feature by feature: `read`, `write`, `rpc`, `media`, `geojson`, `plan`, `context`, and `parse` for PostgREST's query-string grammar |
 | `packages/query/tests/*` | the object API's own: `query-direct`, `composite`, `prepare`, `transaction`, `update-expressions`, and the typed layer below |
 | `packages/core/tests/schema.test.ts` | schema introspection, relationship resolution and the cache |
