@@ -383,6 +383,8 @@ export const introspect = async (db: DbSession, schemas: ReadonlyArray<string>):
       ORDER BY 1, 2, a.attnum`,
   );
 
+  // Ordered, like every other query here: the heap order of pg_constraint is not stable, and a
+  // generated descriptor -- the ambiguous embed `hints` especially -- is committed by the app.
   const conRows = await run<{
     name: string;
     type: string;
@@ -410,7 +412,8 @@ export const introspect = async (db: DbSession, schemas: ReadonlyArray<string>):
        LEFT JOIN pg_namespace fns ON fns.oid = frel.relnamespace
       WHERE con.contype IN ('p','u','f')
         AND con.conparentid = 0
-        AND (ns.nspname = ANY(${S}) OR fns.nspname = ANY(${S}))`,
+        AND (ns.nspname = ANY(${S}) OR fns.nspname = ANY(${S}))
+      ORDER BY ns.nspname, rel.relname, con.conname`,
   );
 
   // Plain columns of views (and materialized views) and the table column each one is read from,
