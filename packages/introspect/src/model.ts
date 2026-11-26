@@ -145,18 +145,26 @@ export interface FunctionDef {
   /** Planner row estimate; 1 on a set-returning function makes a computed relationship to-one. */
   readonly rows: number;
   /** Scalar functions returning a domain named like a media type (`"text/plain"`, …): the raw value is the body. */
-  readonly returnMediaType?: { readonly name: string; readonly bytea: boolean };
+  readonly returnMediaType?: { readonly name: string; readonly bytea: boolean; readonly send?: string | undefined };
 }
 
 /** A custom media type handler: an aggregate named after the media type that returns a domain. */
 export interface MediaHandler {
   readonly schema: string;
-  /** The aggregate's name, i.e. the media type (for example `text/plain`, or the catch-all). */
+  /** The media type: the name of the domain the aggregate returns (for example `text/plain`, or the catch-all). */
   readonly mediaType: string;
+  /** The aggregate's own name, when it is not the media type's: PostgREST goes by the type it returns. */
+  readonly aggregate?: string | undefined;
   /** The table whose rows it aggregates, or `undefined` for `anyelement`. */
   readonly argRelation?: { readonly schema: string; readonly name: string };
   /** True when the domain wraps `bytea` (the body is binary). */
   readonly bytea: boolean;
+  /**
+   * The binary output function of the domain's type, when it is not plain text: PostgREST reads a
+   * handler's result in binary, so a `jsonb` one starts with its version byte and an `xml` one is
+   * `xml_send`'s.
+   */
+  readonly send?: string | undefined;
 }
 
 export interface SchemaCache {

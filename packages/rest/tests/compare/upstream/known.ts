@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 36 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 6 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -82,38 +82,6 @@ export type Cluster = keyof typeof CLUSTERS;
 
 /** Every difference, by case name (`UpstreamCase.name`). */
 export const KNOWN: Record<string, Cluster> = {
-  // ── a media type handled in the database (30) ──
-  "GET /items?id=in.(1,2)&select=id,always_true +{\"Accept\":\"pg/outfunc\"}": "a media type handled in the database",
-  "GET /lines +{\"Accept\":\"application/vnd.geo2+json\"}": "a media type handled in the database",
-  "GET /lines +{\"Accept\":\"application/vnd.twkb\"}": "a media type handled in the database",
-  "GET /lines +{\"Accept\":\"text/csv\"}": "a media type handled in the database",
-  "GET /lines?id=eq.1 +{\"Accept\":\"application/geo+json\"}": "a media type handled in the database",
-  "GET /lines?id=eq.1 +{\"Accept\":\"application/vnd.twkb\"}": "a media type handled in the database",
-  "GET /organizations?select=* +{\"Accept\":\"application/vnd.pgrst.array;nulls=stripped\"}": "a media type handled in the database",
-  "GET /ov_json +{\"Accept\":\"application/json\"}": "a media type handled in the database",
-  "GET /projects?id=in.(1,2) +{\"Accept\":\"pg/outfunc\"}": "a media type handled in the database",
-  "GET /projects?id=in.(1,2) +{\"Accept\":\"text/tab-separated-values\"}": "a media type handled in the database",
-  "GET /projects?id=in.(1,2)&select=*,clients(id) +{\"Accept\":\"pg/outfunc\"}": "a media type handled in the database",
-  "GET /projects?id=in.(1,2)&select=id,name +{\"Accept\":\"pg/outfunc\"}": "a media type handled in the database",
-  "GET /projects?id=in.(1,2)&select=name,id,client_id +{\"Accept\":\"pg/outfunc\"}": "a media type handled in the database",
-  "GET /rpc/get_line?id=777 +{\"Accept\":\"application/vnd.twkb\"}": "a media type handled in the database",
-  "GET /rpc/get_lines +{\"Accept\":\"application/vnd.geo2+json\"}": "a media type handled in the database",
-  "GET /rpc/get_lines +{\"Accept\":\"application/vnd.twkb\"}": "a media type handled in the database",
-  "GET /rpc/get_shop_bles +{\"Accept\":\"application/vnd.geo2+json\"}": "a media type handled in the database",
-  "GET /rpc/ret_any_mt +{\"Accept\":\"app/bingo\"}": "a media type handled in the database",
-  "GET /rpc/ret_any_mt +{\"Accept\":\"image/boingo\"}": "a media type handled in the database",
-  "GET /rpc/ret_any_mt +{\"Accept\":\"text/bango\"}": "a media type handled in the database",
-  "GET /rpc/ret_some_mt +{\"Accept\":\"*/*\"}": "a media type handled in the database",
-  "GET /rpc/ret_some_mt +{\"Accept\":\"app/chico\"}": "a media type handled in the database",
-  "GET /rpc/ret_some_mt +{\"Accept\":\"app/harpo\"}": "a media type handled in the database",
-  "GET /rpc/welcome.xml +{\"Accept\":\"text/xml\"}": "a media type handled in the database",
-  "GET /shop_bles +{\"Accept\":\"application/vnd.geo2+json\"}": "a media type handled in the database",
-  "GET /some_numbers?val=eq.1 +{\"Accept\":\"*/*\"}": "a media type handled in the database",
-  "GET /some_numbers?val=eq.2 +{\"Accept\":\"magic/number\"}": "a media type handled in the database",
-  "GET /some_numbers?val=eq.3 +{\"Accept\":\"crazy/bingo\"}": "a media type handled in the database",
-  "GET /some_numbers?val=eq.4 +{\"Accept\":\"unknown/unknown\"}": "a media type handled in the database",
-  "GET /xmltest +{\"Accept\":\"text/xml\"}": "a media type handled in the database",
-
   // ── a filter on an embed selected with no columns (4) ──
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",

@@ -174,11 +174,16 @@ const toResponse = (
   }
 
   const noBody = status === 204 || status === 304 || text === "" || method === "HEAD";
+  // a `Content-Type` a function set in `response.headers` has the last word
+  const chosen = Object.keys(headers).some((k) => k.toLowerCase() === "content-type");
   if (
+    !chosen &&
     !(
       status === 204 ||
       status === 304 ||
-      (text === "" && method !== "HEAD" && !(format.kind === "handler" && plan.kind === "read"))
+      (text === "" &&
+        method !== "HEAD" &&
+        !(format.kind === "handler" && (plan.kind === "read" || plan.kind === "rpc")))
     )
   )
     headers["Content-Type"] = contentType;

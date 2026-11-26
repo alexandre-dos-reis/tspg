@@ -29,6 +29,11 @@ const castFunctionSql = (source: string, target: string, typ: string): string =>
      WHERE ${typ}.typtype = 'd' AND pc.castsource = ${source} AND pc.casttarget = ${target}
        AND pc.castcontext = 'i' AND pc.castmethod = 'f' AND has_function_privilege(pc.castfunc, 'execute'))`;
 
+/** The binary output function of a domain `t`'s type, unless it is text's (the body is then the text itself). */
+const sendOfSql = (t: string): string =>
+  `(SELECT CASE WHEN ${t}.typsend::regproc::text IN ('textsend', 'varcharsend', 'bpcharsend', 'byteasend', 'json_send')
+                THEN NULL ELSE ${t}.typsend::regproc::text END)`;
+
 const schemaList = (schemas: ReadonlyArray<string>) => `ARRAY[${schemas.map(literal).join(",")}]::text[]`;
 
 const asJson = (inner: string) => `SELECT coalesce(json_agg(r), '[]'::json)::text AS j FROM (${inner}) r`;
@@ -387,7 +392,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     rows: number;
     arg_rel: { schema: string; name: string } | null;
     ret_rel: { schema: string; name: string } | null;
-    ret_media: { name: string; bytea: boolean } | null;
+    ret_media: { name: string; bytea: boolean; send?: string } | null;
     return_enum: string[] | null;
     return_composite: CompositeRef | null;
     args: Array<{ name: string; type: string; mode: string; enum: string[] | null; composite: CompositeRef | null }>;
@@ -404,7 +409,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
             obj_description(p.oid, 'pg_proc') AS comment,
             p.prorows::float8 AS rows,
             CASE WHEN rt.typtype = 'd' AND rt.typname LIKE '%/%'
-                 THEN json_build_object('name', rt.typname, 'bytea', rt.typbasetype = 'bytea'::regtype) END AS ret_media,
+                 THEN json_strip_nulls(json_build_object('name', rt.typname, 'bytea', rt.typbasetype = 'bytea'::regtype, 'send', ${sendOfSql("rt")})) END AS ret_media,
             (SELECT json_build_object('schema', n2.nspname, 'name', c2.relname)
                FROM pg_type t2 JOIN pg_class c2 ON c2.oid = t2.typrelid JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
               WHERE p.pronargs = 1 AND t2.oid = p.proargtypes[0] AND c2.relkind IN ('r','v','m','f','p')) AS arg_rel,
@@ -494,32 +499,40 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       ORDER BY 1, 2`,
   );
 
+  // Media type handlers, as PostgREST's `mediaHandlers` finds them: an aggregate of one argument -- a
+  // row of a relation, or `anyelement` -- whose return type is a domain named like a media type.
   const handlerRows = await run<{
     schema: string;
     name: string;
+    media_type: string;
     arg_rel: { schema: string; name: string } | null;
     bytea: boolean;
+    send: string | null;
   }>(
     db,
-    `SELECT n.nspname AS schema, p.proname AS name,
+    `SELECT n.nspname AS schema, p.proname AS name, lower(rt.typname) AS media_type, ${sendOfSql("rt")} AS send,
             (SELECT json_build_object('schema', n2.nspname, 'name', c2.relname)
                FROM pg_type t2 JOIN pg_class c2 ON c2.oid = t2.typrelid JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
               WHERE t2.oid = p.proargtypes[0] AND c2.relkind IN ('r','v','m','f','p')) AS arg_rel,
             rt.typbasetype = 'bytea'::regtype AS bytea
        FROM pg_proc p
+       JOIN pg_aggregate agg ON agg.aggfnoid = p.oid
        JOIN pg_namespace n ON n.oid = p.pronamespace
        JOIN pg_type rt ON rt.oid = p.prorettype AND rt.typtype = 'd'
       WHERE n.nspname = ANY(${S})
-        AND p.prokind = 'a' AND p.pronargs = 1 AND p.proname LIKE '%/%'
+        AND p.pronargs = 1
+        AND (rt.typname ~* '^[A-Za-z0-9.-]+/[A-Za-z0-9.\\+-]+$' OR rt.typname = '*/*')
         AND (p.proargtypes[0] = 'anyelement'::regtype
-             OR EXISTS (SELECT 1 FROM pg_type t3 JOIN pg_class c3 ON c3.oid = t3.typrelid WHERE t3.oid = p.proargtypes[0]))
-      ORDER BY 1, 2`,
+             OR EXISTS (SELECT 1 FROM pg_class c3 WHERE c3.reltype = p.proargtypes[0] AND c3.relkind IN ('r','v','m','f','p')))
+      ORDER BY 1, 3, 2`,
   );
   const mediaHandlers: MediaHandler[] = handlerRows.map((h) => ({
     schema: h.schema,
-    mediaType: h.name.toLowerCase(),
+    mediaType: h.media_type,
+    ...(h.name.toLowerCase() !== h.media_type ? { aggregate: h.name } : {}),
     ...(h.arg_rel ? { argRelation: h.arg_rel } : {}),
     bytea: h.bytea,
+    ...(h.send ? { send: h.send } : {}),
   }));
 
   // ---- assemble ----

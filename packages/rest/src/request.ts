@@ -22,6 +22,8 @@ export interface MediaChoice {
   readonly aggregate?: string;
   /** Cast the row to this table type before aggregating (the aggregate takes a table row, not `anyelement`). */
   readonly rowType?: string;
+  /** Read the result through this binary output function, as PostgREST reads it (`MediaHandler.send`). */
+  readonly send?: string;
 }
 
 export type Negotiated =
@@ -234,7 +236,8 @@ export const parseAccept = (
         inner,
       };
     }
-    const custom = choices.find((c) => c.mediaType === type);
+    // PostgREST's own vnd.pgrst types are not a handler's to take over
+    const custom = type.startsWith("application/vnd.pgrst.") ? undefined : choices.find((c) => c.mediaType === type);
     if (custom && !isRoot) return { kind: "handler", choice: custom };
     switch (type) {
       case "*/*":
@@ -247,23 +250,35 @@ export const parseAccept = (
     }
     // the root serves its OpenAPI document and nothing else
     if (isRoot) continue;
-    switch (type) {
-      case "application/vnd.pgrst.array+json":
-        return { kind: "json", stripNulls };
-      case "application/vnd.pgrst.object+json":
-      case "application/vnd.pgrst.object":
-        return { kind: "object", stripNulls };
-      case "text/csv":
-        return { kind: "csv" };
-      case "application/geo+json":
-        return { kind: "geojson" };
-    }
+    const answered = builtin(type, stripNulls);
+    if (answered) return answered;
+    // a `*/*` handler takes whatever no other one does (PostgREST falls back to it)
+    const any = choices.find((c) => c.mediaType === "*/*");
+    if (any) return { kind: "handler", choice: any };
   }
   throw new PgRestError(
     406,
     "PGRST107",
     "None of these media types are available: " + entries.map(describeEntry).join(", "),
   );
+};
+
+/** The media types served without a handler, beyond JSON at the root. */
+const builtin = (type: string, stripNulls: boolean): Negotiated | undefined => {
+  switch (type) {
+    case "application/vnd.pgrst.array+json":
+    case "application/vnd.pgrst.array":
+      return { kind: "json", stripNulls };
+    case "application/vnd.pgrst.object+json":
+    case "application/vnd.pgrst.object":
+      return { kind: "object", stripNulls };
+    case "text/csv":
+      return { kind: "csv" };
+    case "application/geo+json":
+      return { kind: "geojson" };
+    default:
+      return undefined;
+  }
 };
 
 export type BodyKind = "json" | "urlencoded" | "csv";
