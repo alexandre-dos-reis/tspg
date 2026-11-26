@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { hasDb, requirePostgis } from "../../../../tests/support/db";
 import { makeApi, type TestApi } from "../support/api";
 import { cases, type Case } from "./cases";
+import { normalize } from "./seen";
 import { POSTGREST_BIN, signJwt, startPostgrest, type RunningPostgrest } from "./postgrest";
 
 /**
@@ -10,17 +11,6 @@ import { POSTGREST_BIN, signJwt, startPostgrest, type RunningPostgrest } from ".
  *   POSTGREST_BIN=/path/to/postgrest TEST_DATABASE_URL=postgres://... bun test ./packages/rest/tests/compare/
  */
 const enabled = hasDb && Boolean(POSTGREST_BIN);
-
-interface Seen {
-  status: number;
-  contentType: string | null;
-  contentRange: string | null;
-  location: string | null;
-  preferenceApplied: string | null;
-  allow: string | null;
-  wwwAuthenticate: string | null;
-  body: unknown;
-}
 
 const identities = {
   anon: { token: undefined, ctx: undefined },
@@ -33,57 +23,6 @@ const identities = {
     ctx: { role: "authenticated", claims: { sub: "bob" } },
   },
 } as const;
-
-/** Drop values that legitimately differ between two runs (now()-based timestamps). */
-const scrub = (v: unknown): unknown => {
-  if (Array.isArray(v)) return v.map(scrub);
-  if (v && typeof v === "object") {
-    return Object.fromEntries(
-      Object.entries(v as Record<string, unknown>)
-        .filter(([k]) => k !== "created_at")
-        .map(([k, x]) => [k, scrub(x)]),
-    );
-  }
-  if (typeof v === "string") return v.replace(/\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d+)?[+-]\d\d/g, "<timestamp>");
-  return v;
-};
-const tokens = (v: string | null) =>
-  v === null
-    ? null
-    : v
-        .split(",")
-        .map((t) => t.trim())
-        .sort()
-        .join(", ");
-
-const normalize = async (res: Response, c: Case): Promise<Seen> => {
-  const text = await res.text();
-  const ct = res.headers.get("content-type");
-  let body: unknown = text;
-  if (c.ignoreBody) body = "(ignored)";
-  else if (ct?.includes("json")) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
-    }
-  }
-  return {
-    status: res.status,
-    contentType: ct
-      ? ct
-          .replace(/;\s*charset=utf-8/i, "")
-          .replace(/\s+/g, "")
-          .toLowerCase()
-      : null,
-    contentRange: res.headers.get("content-range"),
-    location: res.headers.get("location"),
-    preferenceApplied: tokens(res.headers.get("preference-applied")),
-    allow: res.headers.get("allow"),
-    wwwAuthenticate: res.headers.get("www-authenticate"),
-    body: scrub(body),
-  };
-};
 
 describe.skipIf(!enabled)("pg-rest vs PostgREST 16", () => {
   let ours: TestApi;
