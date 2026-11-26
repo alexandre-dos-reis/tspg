@@ -18,7 +18,7 @@ export const errorResponse = (err: ApiError): Response =>
 
 /** Handle a request. Never rejects: errors become PostgREST-style JSON responses. */
 export const handleSafely = async (
-  env: { readonly db: DbAdapter; readonly config: HttpConfig; readonly cache: SchemaCache },
+  env: { readonly adapter: DbAdapter; readonly config: HttpConfig; readonly cache: SchemaCache },
   request: Request,
   ctx: RequestContext,
 ): Promise<Response> => {

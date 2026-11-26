@@ -105,7 +105,7 @@ export const createRest = async (options: RestOptions): Promise<RestInstance> =>
         return errorResponse(api);
       }
     }
-    return handleSafely({ db: adapter, config, cache: store.current() }, request, context ?? {});
+    return handleSafely({ adapter, config, cache: store.current() }, request, context ?? {});
   };
 
   return {

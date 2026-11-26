@@ -35,7 +35,7 @@ export interface CoreConfig {
 }
 
 export interface SqlEnv {
-  readonly db: DbAdapter;
+  readonly adapter: DbAdapter;
   readonly config: CoreConfig;
   readonly cache: SchemaCache;
   /**
@@ -802,7 +802,7 @@ export const execute = async (
         if (rollback) throw new RollbackWith(raw);
         return raw;
       };
-      return session ? await body(session) : await env.db.transaction(body);
+      return session ? await body(session) : await env.adapter.transaction(body);
     } catch (e) {
       if (e instanceof RollbackWith) return e.value as RawResult;
       // The root table is aliased internally; PostgreSQL error texts should name the real table.
