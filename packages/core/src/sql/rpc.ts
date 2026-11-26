@@ -56,6 +56,8 @@ const arrowSignature = (fn: FunctionDef): string =>
  * a table row, say, is a computed field or relationship and nothing else.
  */
 const callable = (fn: FunctionDef): boolean => {
+  // a trigger function is no RPC either (PostgREST's schema cache leaves them out)
+  if (fn.returnType === "trigger") return false;
   const unnamed = fn.args.filter((a) => a.name === "");
   return (
     unnamed.length === 0 ||

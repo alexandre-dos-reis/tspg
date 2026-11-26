@@ -10,6 +10,7 @@ import {
   identityOf,
   planRpc,
   planTable,
+  transactionSetup,
   useSchema,
 } from "@tspg/core/core";
 import type { DbSession } from "@tspg/adapters";
@@ -20,7 +21,7 @@ import { PgRestError } from "./errors";
 import { getRelation, pgrstKey, relKey } from "@tspg/core/schema";
 import { mediaChoices } from "./media";
 import { keysChecked, parseQuery } from "./parse/query-string";
-import { buildOpenApi } from "./openapi";
+import { ACCESSIBLE_SQL, SCHEMA_DESCRIPTION_SQL, buildOpenApi } from "./openapi";
 import {
   parseAccept,
   parseBody,
@@ -302,10 +303,29 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
       throw new PgRestError(405, "PGRST117", `Unsupported HTTP method: ${method}`);
     if (!env.config.openApi) throw new PgRestError(404, "PGRST126", "Root endpoint metadata is disabled");
     parseAccept(request.headers.get("accept"), true);
-    const doc = buildOpenApi(env.cache, schema, {
-      serverUrl: env.config.serverUrl ?? url.origin,
-      basePath: env.config.basePath,
+    // what the role can reach, and the schema's comment, are read as the role, per request (PostgREST's
+    // `accessibleTables` and `schemaDescription`)
+    const setup = transactionSetup(env, ctx);
+    const { accessible, schemaDescription } = await env.adapter.transaction(async (s) => {
+      await s.query("SET TRANSACTION READ ONLY");
+      await s.query(setup.sql, setup.params);
+      const tables = await s.query(ACCESSIBLE_SQL, [schema]);
+      const description = await s.query(SCHEMA_DESCRIPTION_SQL, [schema]);
+      return {
+        accessible: new Set(tables.map((r) => String(r["name"]))),
+        schemaDescription: (description[0]?.["d"] as string | null | undefined) ?? null,
+      };
     });
+    const doc = buildOpenApi(
+      env.cache,
+      schema,
+      {
+        serverUrl: env.config.serverUrl ?? url.origin,
+        basePath: env.config.basePath,
+        searchPath: [schema, ...env.config.extraSearchPath],
+      },
+      { accessible, schemaDescription },
+    );
     return new Response(method === "HEAD" ? null : JSON.stringify(doc), {
       status: 200,
       headers: { "Content-Type": "application/openapi+json; charset=utf-8" },
