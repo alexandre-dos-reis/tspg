@@ -189,6 +189,9 @@ export const resolveRelationship = (
 };
 
 /** Look up a relation by (optional) schema and name, or throw `table_not_found`. */
+/** The key `@tspg/rest` names a row by, as PostgREST does: a view's {@link Relation.pgrstPk}, a table's primary key. */
+export const pgrstKey = (rel: Relation): ReadonlyArray<string> => rel.pgrstPk ?? rel.pk;
+
 export const getRelation = (cache: SchemaCache, schema: string, name: string): Relation => {
   const rel = cache.relations.get(relKey(schema, name));
   if (!rel) {

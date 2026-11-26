@@ -562,12 +562,32 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
     colsByRel.set(key, list);
   }
 
-  // The primary key of a view, as PostgREST's schema cache reads it (`addViewPrimaryKeys`): the
-  // primary key columns of every table behind it that the view exposes, named as the view names
-  // them. A view has no `pg_constraint` row of its own, so without this it has no key at all -- and a
-  // key is what `Location`, `PUT` and an upsert's conflict target are made of.
+  // The primary key of a view: the one of the table behind it, named in the view's own columns, when
+  // the view exposes every column of that key. A view has no `pg_constraint` row of its own, so
+  // without this it has no key at all -- and a key is what tells a single row from a set of one.
+  // Same exclusion as for nullability: an outer join can leave a key column null.
   const viewPk = (key: string): string[] | undefined => {
-    // base table column -> the view column reading it, for this view only (the first one)
+    if (outerJoinViews.has(key)) return undefined;
+    // base table column -> the view column reading it, for this view only
+    const exposed = new Map<string, string>();
+    for (const col of colsByRel.get(key) ?? []) {
+      const src = col.source;
+      if (src) exposed.set(`${relKey(src.schema, src.table)}.${src.column}`, col.name);
+    }
+    for (const tableKey of new Set([...exposed.keys()].map((k) => k.slice(0, k.lastIndexOf("."))))) {
+      const cols = pk.get(tableKey);
+      if (!cols?.length) continue;
+      const names = cols.map((c) => exposed.get(`${tableKey}.${c}`));
+      if (names.every((n) => n !== undefined)) return names as string[];
+    }
+    return undefined;
+  };
+
+  // The key of a view as PostgREST's schema cache reads it (`addViewPrimaryKeys`): every primary key
+  // column of every table behind it that the view exposes, outer join or not, whole key or not. It
+  // does not tell a row from a set -- `viewPk` does that -- but it is what PostgREST's `Location`
+  // and `PUT` are made of, so `@tspg/rest` answers with it.
+  const pgrstViewPk = (key: string): string[] | undefined => {
     const exposed = new Map<string, string>();
     for (const col of colsByRel.get(key) ?? []) {
       const src = col.source;
@@ -593,6 +613,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       kind: kindOf(r.kind),
       columns: colsByRel.get(key) ?? [],
       pk: pk.get(key) ?? viewPk(key) ?? [],
+      ...(pk.has(key) ? {} : { pgrstPk: pgrstViewPk(key) ?? [] }),
       uniques: uniques.get(key) ?? [],
       insertable: (r.bits & 8) === 8,
       updatable: (r.bits & 4) === 4,
@@ -621,7 +642,10 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       ...(f.return_composite ? { returnComposite: f.return_composite } : {}),
       returnsSet: f.returns_set,
       returnsComposite:
-        f.has_out || f.return_typtype === "c" || f.return_type === "record" || (f.return_typtype === "d" && f.ret_rel !== null),
+        f.has_out ||
+        f.return_typtype === "c" ||
+        f.return_type === "record" ||
+        (f.return_typtype === "d" && f.ret_rel !== null),
       ...(f.return_type === "record" && !f.has_out ? { returnsAnonymousRecord: true } : {}),
       returnsVoid: f.return_type === "void",
       volatility: f.volatility === "i" ? "immutable" : f.volatility === "s" ? "stable" : "volatile",

@@ -57,7 +57,10 @@ const arrowSignature = (fn: FunctionDef): string =>
  */
 const callable = (fn: FunctionDef): boolean => {
   const unnamed = fn.args.filter((a) => a.name === "");
-  return unnamed.length === 0 || (unnamed.length === 1 && ["bytea", "json", "jsonb", "text", "xml"].includes(unnamed[0]!.type));
+  return (
+    unnamed.length === 0 ||
+    (unnamed.length === 1 && ["bytea", "json", "jsonb", "text", "xml"].includes(unnamed[0]!.type))
+  );
 };
 
 /**

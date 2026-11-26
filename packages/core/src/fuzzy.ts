@@ -10,8 +10,7 @@ const GRAM_UPPER = 3;
 const GRAM_LOWER = 2;
 
 /** Lowercase, and only letters, digits, spaces and commas: what the package compares. */
-const normalized = (s: string): string =>
-  [...s.toLowerCase()].filter((c) => /[\p{L}\p{N}\s,]/u.test(c)).join("");
+const normalized = (s: string): string => [...s.toLowerCase()].filter((c) => /[\p{L}\p{N}\s,]/u.test(c)).join("");
 
 const grams = (value: string, size: number): Map<string, number> => {
   let padded = `-${normalized(value)}-`;

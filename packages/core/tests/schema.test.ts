@@ -86,9 +86,11 @@ describe.skipIf(!hasDb)("schema introspection", () => {
     expect(col("client_name").nullable).toBe(true);
     // the exclusion is per view, not per column: the preserved side keeps the catalog's answer too
     expect(col("id").nullable).toBe(true);
-    // the primary key is borrowed all the same, as PostgREST's `addViewPrimaryKeys` does: an outer
-    // join does not keep a view's `Location` or `PUT` from naming the key of the table behind it
-    expect(getRelation(cache, "api", "orders_with_client").pk).toEqual(["id"]);
+    // and no primary key is borrowed either
+    expect(getRelation(cache, "api", "orders_with_client").pk).toEqual([]);
+    // but PostgREST's own key of the view (`addViewPrimaryKeys`) has no such exclusion: it is what
+    // `@tspg/rest` names a row of the view by, in `Location` and `PUT`
+    expect(getRelation(cache, "api", "orders_with_client").pgrstPk).toEqual(["id"]);
   });
 
   test("a view borrows from a table whose schema is not exposed", () => {

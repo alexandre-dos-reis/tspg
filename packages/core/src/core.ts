@@ -4,7 +4,7 @@ import type { ParsedQuery } from "./parse/filter";
 import { OPERATORS_ORDER } from "./parse/syntax";
 import { type SqlOperation, type SqlOutputFormat, type SqlPreferences } from "./parse/sql-options";
 import { literal, quoteIdent } from "./quote";
-import { getRelation, type Relation, type SchemaCache } from "./schema";
+import { getRelation, pgrstKey, type Relation, type SchemaCache } from "./schema";
 import { buildRead } from "./sql/read";
 import { type BodyType, buildRpc, isSingleUnnamedParam, resolveFunction, type RpcCall } from "./sql/rpc";
 import { buildStatement, type BodyShape } from "./sql/statement";
@@ -461,7 +461,9 @@ export const planTable = (
   if (query.root.limit !== undefined || query.root.offset !== undefined) {
     throw new EngineError("limit_offset_on_put", "limit/offset querystring parameters are not allowed for PUT");
   }
-  if (rel.pk.length === 0) {
+  // the key PostgREST addresses a row of a view by is its own (`pgrstKey`)
+  const key = pgrstKey(rel);
+  if (key.length === 0) {
     throw new EngineError(
       "put_requires_pk",
       "Filters must include all and only primary key columns with 'eq' operators",
@@ -476,7 +478,7 @@ export const planTable = (
       !f.quantifier &&
       f.field.json.length === 0 &&
       typeof f.value === "string" &&
-      rel.pk.includes(f.field.name)
+      key.includes(f.field.name)
     ) {
       keyValues.set(f.field.name, f.value);
     } else {
@@ -486,7 +488,7 @@ export const planTable = (
       );
     }
   }
-  if (!rel.pk.every((c) => keyValues.has(c))) {
+  if (!key.every((c) => keyValues.has(c))) {
     throw new EngineError(
       "put_requires_pk",
       "Filters must include all and only primary key columns with 'eq' operators",
@@ -497,7 +499,7 @@ export const planTable = (
   if (Array.isArray(body.value) && !body.value.every(isObject)) {
     throw new EngineError("invalid_body", "All object keys must match");
   }
-  const matches = (o: JsonObject): boolean => rel.pk.every((c) => !(c in o) || String(o[c]) === keyValues.get(c));
+  const matches = (o: JsonObject): boolean => key.every((c) => !(c in o) || String(o[c]) === keyValues.get(c));
   // PostgREST inserts the rows of the payload the URL's key selects, and refuses unless that is exactly one.
   let row: unknown = body.value;
   if (Array.isArray(row)) {
@@ -518,12 +520,12 @@ export const planTable = (
   if (!matches(obj)) {
     throw new EngineError("payload_key_mismatch", "Payload values do not match URL in primary key column(s)");
   }
-  const full: JsonObject = { ...Object.fromEntries(rel.pk.map((c) => [c, keyValues.get(c)])), ...obj };
+  const full: JsonObject = { ...Object.fromEntries(key.map((c) => [c, keyValues.get(c)])), ...obj };
   // A `PUT` answers `201` when it inserted and `200` when it replaced, so it counts too.
   const putSql = buildInsert({
     rel,
     rows: [full],
-    onConflict: rel.pk,
+    onConflict: key,
     resolution: "merge-duplicates",
     countInserted: true,
     returning,
@@ -602,7 +604,9 @@ export const planRpc = (
       }
     }
     // `columns=` names the arguments: the other keys of the payload are not passed
-    const named = qp.params.some(([k]) => k === "columns") ? qp.parse({ allowFilterKey: () => false }).columns : undefined;
+    const named = qp.params.some(([k]) => k === "columns")
+      ? qp.parse({ allowFilterKey: () => false }).columns
+      : undefined;
     if (named) argValues = Object.fromEntries(Object.entries(argValues).filter(([k]) => named.includes(k)));
   } else {
     // every query parameter that is not a filter, a reserved word or a bare key is an argument
@@ -618,7 +622,15 @@ export const planRpc = (
   }
   const provided = Object.keys(argValues);
   // only a JSON body can be taken whole by a function's single unnamed json parameter
-  const fn = resolveFunction(env.cache, schema, name, new Set(provided), write && body?.kind === "json", write, bodyType);
+  const fn = resolveFunction(
+    env.cache,
+    schema,
+    name,
+    new Set(provided),
+    write && body?.kind === "json",
+    write,
+    bodyType,
+  );
   // A parameter given twice in a query string or a form is a list for a variadic parameter, which
   // always takes one, and the last value for any other (PostgREST).
   const listed = !write || body?.kind === "urlencoded";

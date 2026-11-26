@@ -70,6 +70,12 @@ export interface Relation {
   readonly kind: RelationKind;
   readonly columns: ReadonlyArray<Column>;
   readonly pk: ReadonlyArray<string>;
+  /**
+   * For a view, its key as PostgREST reads it: every primary key column of the tables behind it that
+   * it exposes, even part of a key, even across an outer join. What `Location` and `PUT` name; it does
+   * not identify a row the way `pk` does. Absent for a table, whose key is `pk`.
+   */
+  readonly pgrstPk?: ReadonlyArray<string> | undefined;
   readonly uniques: ReadonlyArray<ReadonlyArray<string>>;
   readonly insertable: boolean;
   readonly updatable: boolean;

@@ -2,7 +2,7 @@ import { ROOT_ALIAS } from "../constants";
 import { EngineError } from "../errors";
 import type { FilterNode } from "../parse/filter";
 import { quoteIdent, quoteQualified } from "../quote";
-import type { Relation } from "../schema";
+import { pgrstKey, type Relation } from "../schema";
 import { whereSql } from "./filters";
 import { type Values, inlined } from "./values";
 
@@ -14,7 +14,9 @@ export type Returning = "representation" | "pk" | "minimal";
 const returningSql = (rel: Relation, returning: Returning): string => {
   const alias = quoteIdent(ROOT_ALIAS);
   if (returning === "representation") return `${alias}.*`;
-  if (returning === "pk" && rel.pk.length > 0) return rel.pk.map((c) => `${alias}.${quoteIdent(c)}`).join(", ");
+  // `return=headers-only` reads back the columns `Location` names
+  const key = pgrstKey(rel);
+  if (returning === "pk" && key.length > 0) return key.map((c) => `${alias}.${quoteIdent(c)}`).join(", ");
   return "1";
 };
 
@@ -192,8 +194,7 @@ export const buildUpdate = (o: UpdateOptions): string | null => {
   const clauses = o.clauses ?? [];
   if (cols.length === 0 && clauses.length === 0) return null;
   const table = quoteQualified(rel.schema, rel.name);
-  const valueOf = (c: string) =>
-    o.columns && o.missingDefault && !(c in o.body) ? "DEFAULT" : `_u.${quoteIdent(c)}`;
+  const valueOf = (c: string) => (o.columns && o.missingDefault && !(c in o.body) ? "DEFAULT" : `_u.${quoteIdent(c)}`);
   const set = [...cols.map((c) => `${quoteIdent(c)} = ${valueOf(c)}`), ...clauses].join(", ");
   const where = whereSql(o.filters, ROOT_ALIAS, rel, o.values ?? inlined);
   // the JSON body is `$1`, and only a statement that reads it may mention it
