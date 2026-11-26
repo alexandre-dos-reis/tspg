@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 251 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 211 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -82,7 +82,7 @@ export type Cluster = keyof typeof CLUSTERS;
 
 /** Every difference, by case name (`UpstreamCase.name`). */
 export const KNOWN: Record<string, Cluster> = {
-  // ── data representations (31) ──
+  // ── data representations (29) ──
   "GET /datarep_next_two_todos?select=id,name,datarep_todos!datarep_next_two_todos_first_item_id_fkey(label_color,due_at)&datarep_todos.label_color=neq.000100&order=id": "data representations",
   "GET /datarep_next_two_todos?select=id,name,first_item:datarep_todos!datarep_next_two_todos_first_item_id_fkey(label_color,due_at)&order=id": "data representations",
   "GET /datarep_next_two_todos?select=id,name,second_item:datarep_todos!datarep_next_two_todos_second_item_id_fkey(*)&order=id": "data representations",
@@ -101,9 +101,7 @@ export const KNOWN: Record<string, Cluster> = {
   "PATCH /datarep_todos_computed?id=eq.2 +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
   "PATCH /datarep_todos_computed?id=eq.2 +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:20Z\"}>": "data representations",
   "PATCH /datarep_todos_computed?id=eq.2&columns=due_at +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"due_at\": \"2019-01-03T11:00:00Z\", \"smth\": \"here\", \"label_color\": \"invalid\", \"fake_id\": 13}>": "data representations",
-  "PATCH /datarep_todos_computed?id=eq.2&columns=label_color,helicopters +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"due_at\": \"2019-01-03T11:00:00Z\", \"smth\": \"here\", \"label_color\": \"invalid\", \"fake_id\": 13}>": "data representations",
   "PATCH /datarep_todos_computed?id=eq.2&select=id,label_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
-  "PATCH /datarep_todos_computed?id=eq.2001&columns=label_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"due_at\": \"2019-01-03T11:00:00Z\", \"smth\": \"here\", \"label_color\": \"invalid\", \"fake_id\": 13}>": "data representations",
   "PATCH /datarep_todos_computed?id=lt.4 +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
   "PATCH /datarep_todos_computed?id=lt.4&select=id,name,label_color,dark_color +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"label_color\": \"#221100\", \"due_at\": \"2019-01-03T11:00:00Z\"}>": "data representations",
   "POST /datarep_todos +{\"Prefer\":\"return=headers-only, tx=rollback\"} <{\"id\":5, \"name\": \"party\", \"label_color\": \"#001100\", \"due_at\": \"2018-01-03T11:00:00+00\"}>": "data representations",
@@ -146,32 +144,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /some_numbers?val=eq.3 +{\"Accept\":\"crazy/bingo\"}": "a media type handled in the database",
   "GET /some_numbers?val=eq.4 +{\"Accept\":\"unknown/unknown\"}": "a media type handled in the database",
   "GET /xmltest +{\"Accept\":\"text/xml\"}": "a media type handled in the database",
-
-  // ── PUT with a single-element array payload (24) ──
-  "PUT /UnitTest?idUnitTest=eq.1 +{\"Prefer\":\"return=minimal, tx=rollback\"} <[ { \"idUnitTest\": 1, \"nameUnitTest\": \"unit test 1\" } ]>": "PUT with a single-element array payload",
-  "PUT /UnitTest?idUnitTest=eq.1 +{\"Prefer\":\"tx=rollback\"} <[ { \"idUnitTest\": 1, \"nameUnitTest\": \"unit test 1\" } ]>": "PUT with a single-element array payload",
-  "PUT /car_models?name=eq.DeLorean&year=eq.1981 +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"name\": \"DeLorean\", \"year\": 1981, \"car_brand_name\": null } ]>": "PUT with a single-element array payload",
-  "PUT /car_models?name=eq.Supra&year=eq.2021 +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"name\": \"Supra\", \"year\": 2021 } ]>": "PUT with a single-element array payload",
-  "PUT /employees?first_name=eq.Frances M.&last_name=eq.Roe +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"first_name\": \"Frances M.\", \"last_name\": \"Roe\", \"salary\": \"60000\", \"company\": \"Gamma Gas\", \"occupation\": \"Railroad engineer\" } ]>": "PUT with a single-element array payload",
-  "PUT /employees?first_name=eq.Susan +{\"Prefer\":\"tx=rollback\"} <[ { \"first_name\": \"Susan\", \"last_name\": \"Heidt\", \"salary\": \"48000\", \"company\": \"GEX\", \"occupation\": \"Railroad engineer\" } ]>": "PUT with a single-element array payload",
-  "PUT /employees?first_name=eq.Susan&last_name=eq.Heidt +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"first_name\": \"Susan\", \"last_name\": \"Heidt\", \"salary\": \"48000\", \"company\": \"GEX\", \"occupation\": \"Railroad engineer\" } ]>": "PUT with a single-element array payload",
-  "PUT /employees?first_name=eq.Wendy&last_name=eq.Anderson +{\"Prefer\":\"tx=rollback\"} <[ { \"first_name\": \"Susan\", \"last_name\": \"Heidt\", \"salary\": \"48000\", \"company\": \"GEX\", \"occupation\": \"Railroad engineer\" } ]>": "PUT with a single-element array payload",
-  "PUT /employees?last_name=eq.Heidt +{\"Prefer\":\"tx=rollback\"} <[ { \"first_name\": \"Susan\", \"last_name\": \"Heidt\", \"salary\": \"48000\", \"company\": \"GEX\", \"occupation\": \"Railroad engineer\" } ]>": "PUT with a single-element array payload",
-  "PUT /no_pk?a=eq.one&b=eq.two +{\"Prefer\":\"tx=rollback\"} <[ { \"a\": \"one\", \"b\": \"two\" } ]>": "PUT with a single-element array payload",
-  "PUT /only_pk?id=eq.1 +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"id\": 1 } ]>": "PUT with a single-element array payload",
-  "PUT /only_pk?id=eq.10 +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"id\": 10 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?and=(id.eq.Go) +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Go\", \"rank\": 19 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?id=in.(Go) +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Go\", \"rank\": 19 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?id=not.eq.Java +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Go\", \"rank\": 19 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Go +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"name\": \"Go\", \"rank\": 19 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Java +{\"Prefer\":\"return=representation, tx=rollback\",\"Accept\":\"application/vnd.pgrst.object+json\"} <[ { \"name\": \"Java\", \"rank\": 19 }, { \"name\": \"Swift\", \"rank\": 12 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Java +{\"Prefer\":\"return=representation, tx=rollback\",\"Range\":\"1-1\"} <[ { \"name\": \"Java\", \"rank\": 5 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Java +{\"Prefer\":\"return=representation, tx=rollback\"} <[ { \"name\": \"Java\", \"rank\": 13 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Javascript&limit=1 +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Javascript\", \"rank\": 1 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Javascript&offset=1 +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Javascript\", \"rank\": 1 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.MATLAB +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Perl\", \"rank\": 17 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?name=eq.Ruby +{\"Prefer\":\"return=representation, tx=rollback\",\"Accept\":\"application/vnd.pgrst.object+json\"} <[ { \"name\": \"Ruby\", \"rank\": 11 } ]>": "PUT with a single-element array payload",
-  "PUT /tiobe_pls?rank=eq.19 +{\"Prefer\":\"tx=rollback\"} <[ { \"name\": \"Go\", \"rank\": 19 } ]>": "PUT with a single-element array payload",
 
   // ── an embed by a name that is not a table (23) ──
   "GET /activities?select=fst_shift(*)": "an embed by a name that is not a table",
@@ -236,22 +208,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /json_arr?select=idx0:data->>0::int,idx1:data->>1::int&id=in.(1,2)": "a cast after a json arrow",
   "GET /trash_details?select=jsonb_col->>key::integer.sum()": "a cast after a json arrow",
   "GET /trash_details?select=s:jsonb_col->>key::integer.sum()::text": "a cast after a json arrow",
-
-  // ── columns= and the payload (14) ──
-  "PATCH /articles?id=eq.1&columns=body +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"body\": \"Some real content\", \"smth\": \"here\", \"other\": \"stuff\", \"fake_id\": 13}>": "columns= and the payload",
-  "PATCH /articles?id=eq.1&columns=helicopter +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"body\": \"yyy\"}>": "columns= and the payload",
-  "PATCH /articles?id=eq.2001&columns=body +{\"Prefer\":\"return=representation, tx=rollback\"} <{\"body\": \"Some real content\", \"smth\": \"here\", \"other\": \"stuff\", \"fake_id\": 13}>": "columns= and the payload",
-  "PATCH /complex_items?id=eq.3&columns=name,field-with_sep +{\"Prefer\":\"return=representation, missing=default, tx=rollback\"} <{\"name\": \"Tres\"}>": "columns= and the payload",
-  "PATCH /complex_items_view?id=eq.3&columns=arr_data,name +{\"Prefer\":\"return=representation, missing=default, tx=rollback\"} <{\"arr_data\":null}>": "columns= and the payload",
-  "POST /Surr_Gen_Default_Upsert?columns=id,name&select=name,extra +{\"Prefer\":\"return=representation, resolution=ignore-duplicates, missing=default, tx=rollback\"} <[ { \"id\": 1, \"name\": \"updated value\" }, { \"name\": \"new value\" } ]>": "columns= and the payload",
-  "POST /Surr_Gen_Default_Upsert?columns=id,name&select=name,extra +{\"Prefer\":\"return=representation, resolution=merge-duplicates, missing=default, tx=rollback\"} <[ { \"id\": 1, \"name\": \"updated value\" }, { \"name\": \"new value\" } ]>": "columns= and the payload",
-  "POST /articles?columns= +{\"Prefer\":\"tx=rollback\"} <[ {\"id\": 204, \"body\": \"yyy\"}, {\"id\": 205, \"body\": \"zzz\"}]>": "columns= and the payload",
-  "POST /articles?columns=id,body +{\"Prefer\":\"tx=rollback\"} <[ {\"id\": 204, \"body\": \"yyy\"}, 333, \"asdf\", {\"id\": 205, \"body\": \"zzz\"}]>": "columns= and the payload",
-  "POST /channels?columns=id,data,slug&select=data,slug +{\"Prefer\":\"return=representation, missing=default, tx=rollback\"} <{ \"slug\": \"foo\" }>": "columns= and the payload",
-  "POST /evil_friends?columns=id,name +{\"Prefer\":\"return=representation, missing=default, tx=rollback\"} <{ \"name\": \"Lu\" }>": "columns= and the payload",
-  "POST /rpc/sayhello?columns=name +{\"Prefer\":\"tx=rollback\"} <{\"name\": \"John\", \"smth\": \"here\", \"other\": \"stuff\", \"fake_id\": 13}>": "columns= and the payload",
-  "POST /surr_gen_default_upsert?columns=id,name&select=name,extra +{\"Prefer\":\"return=representation, resolution=ignore-duplicates, missing=default, tx=rollback\"} <[ { \"id\": 1, \"name\": \"updated value\" }, { \"name\": \"new value\" } ]>": "columns= and the payload",
-  "POST /surr_gen_default_upsert?columns=id,name&select=name,extra +{\"Prefer\":\"return=representation, resolution=merge-duplicates, missing=default, tx=rollback\"} <[ { \"id\": 1, \"name\": \"updated value\" }, { \"name\": \"new value\" } ]>": "columns= and the payload",
 
   // ── an aggregate in a spread embed (13) ──
   "GET /budget_expenses?select=...budget_categories(total_budget:budget_amount.sum())": "an aggregate in a spread embed",

@@ -173,6 +173,10 @@ export const buildInsert = (o: InsertOptions): string => {
 export interface UpdateOptions {
   readonly rel: Relation;
   readonly body: JsonObject;
+  /** `columns=`: the columns written, whatever the payload holds; a column it lacks is set to null (or its default). */
+  readonly columns?: ReadonlyArray<string> | undefined;
+  /** `missing=default`: a column of `columns` the payload lacks is set to its default rather than null. */
+  readonly missingDefault?: boolean | undefined;
   /** `col = expr` clauses compiled by `query()` (`sql/expression.ts`); HTTP never sets them. */
   readonly clauses?: ReadonlyArray<string> | undefined;
   readonly filters: ReadonlyArray<FilterNode>;
@@ -183,12 +187,14 @@ export interface UpdateOptions {
 /** `UPDATE … SET … RETURNING …`, or `null` when the payload sets no columns. */
 export const buildUpdate = (o: UpdateOptions): string | null => {
   const { rel } = o;
-  const cols = Object.keys(o.body);
+  const cols = o.columns ? [...o.columns] : Object.keys(o.body);
   checkColumns(rel, cols);
   const clauses = o.clauses ?? [];
   if (cols.length === 0 && clauses.length === 0) return null;
   const table = quoteQualified(rel.schema, rel.name);
-  const set = [...cols.map((c) => `${quoteIdent(c)} = _u.${quoteIdent(c)}`), ...clauses].join(", ");
+  const valueOf = (c: string) =>
+    o.columns && o.missingDefault && !(c in o.body) ? "DEFAULT" : `_u.${quoteIdent(c)}`;
+  const set = [...cols.map((c) => `${quoteIdent(c)} = ${valueOf(c)}`), ...clauses].join(", ");
   const where = whereSql(o.filters, ROOT_ALIAS, rel, o.values ?? inlined);
   // the JSON body is `$1`, and only a statement that reads it may mention it
   const from = cols.length ? ` FROM (SELECT * FROM json_populate_record(null::${table}, ($1::text)::json)) AS _u` : "";

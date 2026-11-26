@@ -336,6 +336,14 @@ export const planTable = (
 
   if (operation === "insert") {
     if (!body) throw new EngineError("invalid_body", "Empty or invalid json");
+    // With `columns=`, PostgREST hands the payload to `json_to_recordset` as it is, and PostgreSQL is the one to refuse it.
+    if (
+      query.columns &&
+      Array.isArray(body.value) &&
+      body.value.some((r) => r === null || typeof r !== "object" || Array.isArray(r))
+    ) {
+      throw new DbQueryError("22023", "argument of json_to_recordset must be an array of objects");
+    }
     const rows = asRows(body.value);
     // Only a merge-duplicates upsert can answer `200` rather than `201`, so only it needs the count
     // (PostgREST: `isInsert && (isPut || resolution == MergeDuplicates)`).
@@ -375,10 +383,13 @@ export const planTable = (
     const obj: JsonObject =
       first !== null && typeof first === "object" && !Array.isArray(first) ? (first as JsonObject) : {};
     // the JSON body is `$1` when there is one, and the filters' parameters come after it
-    const values = valuesFor(qp, Object.keys(obj).length ? 1 : 0);
+    const readsBody = (query.columns ?? Object.keys(obj)).length > 0;
+    const values = valuesFor(qp, readsBody ? 1 : 0);
     const updateSql = buildUpdate({
       rel,
       body: obj as JsonObject,
+      columns: query.columns,
+      missingDefault: prefer.missing === "default",
       clauses: qp.setClauses,
       filters: query.root.filters,
       returning,
@@ -406,7 +417,7 @@ export const planTable = (
       ...common,
       kind: "update",
       returning,
-      params: [...(Object.keys(obj).length ? [JSON.stringify(obj)] : []), ...values.bound],
+      params: [...(readsBody ? [JSON.stringify(obj)] : []), ...values.bound],
       shape,
       statement: buildStatement({
         source: updateSql,
@@ -438,19 +449,9 @@ export const planTable = (
     };
   }
 
-  // PUT: single-row upsert addressed by primary key.
+  // PUT: single-row upsert addressed by primary key. PostgREST reads the request before the payload,
+  // so what is wrong with the filters is reported first.
   if (!body) throw new EngineError("invalid_body", "Empty or invalid json");
-  const row = body.value;
-  if (Array.isArray(row) && !row.every((r) => r !== null && typeof r === "object" && !Array.isArray(r))) {
-    throw new EngineError("invalid_body", "All object keys must match");
-  }
-  if (row === null || typeof row !== "object" || Array.isArray(row)) {
-    throw new EngineError(
-      "invalid_body",
-      "Empty or invalid json",
-      "The payload of a PUT request must be a JSON object",
-    );
-  }
   if (query.root.limit !== undefined || query.root.offset !== undefined) {
     throw new EngineError("limit_offset_on_put", "limit/offset querystring parameters are not allowed for PUT");
   }
@@ -485,11 +486,31 @@ export const planTable = (
       "Filters must include all and only primary key columns with 'eq' operators",
     );
   }
-  const obj = row as JsonObject;
-  for (const c of rel.pk) {
-    if (c in obj && String(obj[c]) !== keyValues.get(c)) {
+  const isObject = (r: unknown): r is JsonObject => r !== null && typeof r === "object" && !Array.isArray(r);
+  // PostgREST takes an object or an array of objects, and writes the one row it addresses.
+  if (Array.isArray(body.value) && !body.value.every(isObject)) {
+    throw new EngineError("invalid_body", "All object keys must match");
+  }
+  const matches = (o: JsonObject): boolean => rel.pk.every((c) => !(c in o) || String(o[c]) === keyValues.get(c));
+  // PostgREST inserts the rows of the payload the URL's key selects, and refuses unless that is exactly one.
+  let row: unknown = body.value;
+  if (Array.isArray(row)) {
+    const selected = (row as JsonObject[]).filter(matches);
+    if (row.length > 0 && selected.length !== 1) {
       throw new EngineError("payload_key_mismatch", "Payload values do not match URL in primary key column(s)");
     }
+    row = row.length === 0 ? row : selected[0];
+  }
+  if (!isObject(row)) {
+    throw new EngineError(
+      "invalid_body",
+      "Empty or invalid json",
+      "The payload of a PUT request must be a JSON object",
+    );
+  }
+  const obj = row;
+  if (!matches(obj)) {
+    throw new EngineError("payload_key_mismatch", "Payload values do not match URL in primary key column(s)");
   }
   const full: JsonObject = { ...Object.fromEntries(rel.pk.map((c) => [c, keyValues.get(c)])), ...obj };
   // A `PUT` answers `201` when it inserted and `200` when it replaced, so it counts too.
@@ -574,6 +595,9 @@ export const planRpc = (
         }
       }
     }
+    // `columns=` names the arguments: the other keys of the payload are not passed
+    const named = qp.params.some(([k]) => k === "columns") ? qp.parse({ allowFilterKey: () => false }).columns : undefined;
+    if (named) argValues = Object.fromEntries(Object.entries(argValues).filter(([k]) => named.includes(k)));
   } else {
     // every query parameter that is not a filter, a reserved word or a bare key is an argument
     const lists = new Map<string, string[]>();

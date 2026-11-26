@@ -185,7 +185,8 @@ export const parseQuery = (
       select = used === "" ? [{ kind: "star" }] : parseSelect(used);
     } else if (k === "on_conflict" || k === "columns") {
       // the names end up in the statement: they are read with PostgREST's grammar, which ignores what follows
-      const end = v === "" ? 0 : checkFieldList(k, v);
+      // an empty `columns=` is a parse error upstream; an empty `on_conflict=` names no target
+      const end = v === "" && k === "on_conflict" ? 0 : checkFieldList(k, v);
       if (end instanceof EngineError) throw end;
       const names = splitTopLevel(v === "" ? v : v.slice(0, end), ",")
         .map(unquote)

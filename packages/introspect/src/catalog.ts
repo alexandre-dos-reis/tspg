@@ -200,7 +200,13 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
             ${enumLabelsSql("a.atttypid")} AS enum_labels,
             NOT a.attnotnull AS nullable,
             (a.atthasdef OR a.attidentity <> '') AS has_default,
-            pg_get_expr(d.adbin, d.adrelid) AS default_expr,
+            -- what PostgREST's schema cache reads as the default: a domain's own when the column has
+            -- none, and the sequence of an identity column (\`missing=default\` writes it)
+            CASE
+              WHEN d.adbin IS NULL AND ty.typtype = 'd' THEN pg_get_expr(ty.typdefaultbin, 0)
+              WHEN a.attidentity <> '' THEN format('nextval(%L::regclass)', pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname))
+              ELSE pg_get_expr(d.adbin, d.adrelid)
+            END AS default_expr,
             (a.attgenerated <> '') AS generated,
             a.attidentity::text AS identity,
             col_description(c.oid, a.attnum) AS comment,
@@ -208,6 +214,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
        FROM pg_attribute a
        JOIN pg_class c ON c.oid = a.attrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_type ty ON ty.oid = a.atttypid
        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
       WHERE n.nspname = ANY(${S})
         AND c.relkind IN ('r','v','m','f','p')
