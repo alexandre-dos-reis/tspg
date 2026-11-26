@@ -29,7 +29,7 @@ Introspection runs here, so a connection or catalog problem surfaces at startup 
 | `anonymousRole` | the role for a call with no context. Default `"anon"`; `false` refuses anonymous calls with `401 PGRST302` |
 | `maxRows` | a cap on the rows a read returns (PostgREST's `db-max-rows`) |
 | `extraSearchPath` | schemas appended to `search_path` after the selected one. Default `["public"]` |
-| `onClose` | what `close()` does to the driver. Default: the adapter's own `close()`. `({ db }) => …` takes it over — `onClose: () => {}` leaves the driver open, which is what a pool shared between two instances wants |
+| `onClose` | what `close()` does to the driver. Default: the adapter's own `close()`. `({ driver }) => …` takes it over — `onClose: () => {}` leaves the driver open, which is what a pool shared between two instances wants |
 | `preRequest` | a SQL function name (`"auth.check"`) or a callback `(session, info) => Promise<void>`, run inside the request's transaction (`db-pre-request`). In a [transaction scope](query.md#transactions) it runs before every operation of `tx`, each with its own method and path. `info` is `{ role, claims, method, path }`; `createRest` adds the `request` (`@tspg/query` has none) |
 
 **`createRest` only**: HTTP.

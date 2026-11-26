@@ -36,7 +36,7 @@ const rest = await createRest({ db: nodePostgresAdapter(pool), schemas: ["api"] 
 
 `rest.close()` stops the handler and ends the pool — `close()` calls the adapter's own `close()` (`pool.end()`,
 `sql.end()`, `pglite.close()`; nothing, for an adapter that has none), and does it once however often it is called. The
-`onClose` option takes that over, the adapter handed back as `db`:
+`onClose` option takes that over, the adapter handed back as `driver`:
 
 ```ts
 const db = nodePostgresAdapter(pool);

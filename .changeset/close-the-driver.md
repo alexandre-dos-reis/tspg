@@ -11,7 +11,7 @@ longer has to be ended beside it. Closing twice closes once, and a driver someth
 closed is not an error.
 
 **Breaking** for a driver that must outlive the instance, or is shared: pass `onClose`, which is
-handed the adapter and decides the whole of what closing does.
+handed the adapter as `driver` and decides the whole of what closing does.
 
 ```ts
 const db = nodePostgresAdapter(pool);

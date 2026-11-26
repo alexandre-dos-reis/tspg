@@ -61,7 +61,7 @@ describe("close()", () => {
   test("onClose takes it over, and is handed the adapter", async () => {
     const db = stub(async () => {});
     const seen: DbAdapter[] = [];
-    const api = createQuery({ db, schemas: ["api"], onClose: ({ db: given }) => void seen.push(given) });
+    const api = createQuery({ db, schemas: ["api"], onClose: ({ driver }) => void seen.push(driver) });
     await api.close();
     expect(db.closed).toBe(0); // the driver is left to the caller
     expect(seen).toEqual([db]); // the adapter as it was given, so `onClose` can close it itself
@@ -75,8 +75,8 @@ describe("close()", () => {
     const api = createQuery({
       db,
       schemas: ["api"],
-      onClose: async ({ db: given }) => {
-        await given.close?.();
+      onClose: async ({ driver }) => {
+        await driver.close?.();
         done = true;
       },
     });

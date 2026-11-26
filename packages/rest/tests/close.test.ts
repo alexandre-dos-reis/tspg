@@ -56,7 +56,7 @@ describe("close()", () => {
       db,
       schemas: ["api"],
       anonymousRole: "anon",
-      onClose: ({ db: given }) => void seen.push(given),
+      onClose: ({ driver }) => void seen.push(driver),
     });
     await api.close();
     expect([db.closed, seen]).toEqual([0, [db]]);

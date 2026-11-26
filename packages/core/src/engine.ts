@@ -28,8 +28,8 @@ export interface EngineOptions {
    * `close()` (`pool.end()`, `sql.end()`, `pglite.close()`...), which is what a driver created for
    * this instance and nothing else wants.
    *
-   * Give it to take that over -- the adapter is handed back as `db`, and what you do with it is the
-   * whole of what closing does:
+   * Give it to take that over -- the adapter is handed back as `driver`, and what you do with it is
+   * the whole of what closing does:
    *
    * ```ts ignore
    * // one pool, two instances: whichever closes first must not end it under the other
@@ -40,7 +40,7 @@ export interface EngineOptions {
    *
    * It is called once, however many times `close()` is called.
    */
-  readonly onClose?: (ctx: { readonly db: DbAdapter }) => void | Promise<void>;
+  readonly onClose?: (ctx: { readonly driver: DbAdapter }) => void | Promise<void>;
 }
 
 /** What an instance is built on: the database, the settings both entry points read, the schema cache. */
@@ -106,7 +106,7 @@ const build = (options: EngineOptions): Pick<Engine, "adapter" | "config" | "clo
     // `onClose` is the caller's code: what it throws is theirs to see. The default is the library
     // closing something it did not open, where a driver already ended -- `pool.end()` twice, a
     // process shutting down in both directions -- is the ordinary case and not a failure.
-    if (options.onClose) return void (await options.onClose({ db: user }));
+    if (options.onClose) return void (await options.onClose({ driver: user }));
     try {
       await user.close?.();
     } catch {
