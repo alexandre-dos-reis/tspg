@@ -305,7 +305,7 @@ export const planTable = (
       limit,
       pagedRead: paged,
       countInStatement: needCount && paged,
-      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.unpaged : undefined,
+      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.planned : undefined,
       statement: buildStatement({
         rows: read.rows,
         count: needCount && paged ? read.count : undefined,
@@ -709,7 +709,7 @@ export const planRpc = (
       limit,
       pagedRead: paged,
       countInStatement: needCount && paged,
-      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.unpaged : undefined,
+      planned: prefer.count === "planned" || prefer.count === "estimated" ? read.planned : undefined,
       shape,
       statement: buildStatement({
         rows: read.rows,

@@ -25,8 +25,10 @@ export interface ReadSql {
   readonly rows: string;
   /** `SELECT count(*) …` over the same rows without paging. */
   readonly count: string;
-  /** The row-producing SELECT without ORDER/LIMIT/OFFSET (used for planner estimates). */
+  /** The row-producing SELECT without ORDER/LIMIT/OFFSET. */
   readonly unpaged: string;
+  /** What the planner is asked to estimate for `count=planned`: PostgREST's count query when it can be built. */
+  readonly planned: string;
 }
 
 interface Join {
@@ -424,6 +426,89 @@ const buildEmbed = (
   };
 };
 
+/**
+ * PostgREST's count query (`readPlanToCountQuery`), whose plan `count=planned` reads: the rows of the
+ * level and nothing else, an embed's `is.null` and an `!inner` embed as `[NOT] EXISTS` over the
+ * embedded rows. `undefined` where this does not build it the same way (aggregates, computed
+ * relationships), and then the read itself is estimated.
+ */
+const countQuery = (
+  ctx: Ctx,
+  items: ReadonlyArray<SelectItem>,
+  rel: Relation,
+  alias: string,
+  from: string,
+  params: NodeParams | undefined,
+  path: string[],
+  joinConds: ReadonlyArray<string>,
+): string | undefined => {
+  if (items.some((i) => i.kind === "aggregate")) return undefined;
+  const q = quoteIdent;
+  const embeds = new Map<string, { inner: boolean; sub: () => string | undefined }>();
+  for (const item of items) {
+    if (item.kind !== "embed") continue;
+    const name = item.alias ?? item.target;
+    const r = resolveRelationship(ctx.cache, rel, item.target, item.hint);
+    const child = r.to;
+    const cAlias = ctx.aliases.next(`${child.name}_`);
+    embeds.set(name, {
+      inner: item.join === "inner",
+      sub: () => {
+        if (r.computed) return undefined;
+        let childFrom = `${quoteQualified(child.schema, child.name)} AS ${q(cAlias)}`;
+        let conds: string[];
+        if (r.junction) {
+          const j = r.junction;
+          const jAlias = ctx.aliases.next(`${ALIAS}_m`);
+          childFrom += ` JOIN ${quoteQualified(j.relation.schema, j.relation.name)} AS ${q(jAlias)} ON ${j.fkTo.cols
+            .map((c, i) => `${q(jAlias)}.${q(c)} = ${q(cAlias)}.${q(j.fkTo.fcols[i]!)}`)
+            .join(" AND ")}`;
+          conds = j.fkFrom.cols.map((c, i) => `${q(jAlias)}.${q(c)} = ${q(alias)}.${q(j.fkFrom.fcols[i]!)}`);
+        } else {
+          conds = r.toCols.map((c, i) => `${q(cAlias)}.${q(c)} = ${q(alias)}.${q(r.fromCols[i]!)}`);
+        }
+        const childPath = [...path, name];
+        return countQuery(
+          ctx,
+          item.items,
+          child,
+          cAlias,
+          childFrom,
+          ctx.query.embeds.get(childPath.join(".")),
+          childPath,
+          conds,
+        );
+      },
+    });
+  }
+  let failed = false;
+  const exists = (name: string, present: boolean): string => {
+    const sub = embeds.get(name)?.sub();
+    if (sub === undefined) {
+      failed = true;
+      return "";
+    }
+    return `${present ? "" : "NOT "}EXISTS (${sub})`;
+  };
+  const render = (node: FilterNode): string => {
+    if (node.kind === "filter") {
+      if (node.op === "is" && node.value === "null" && node.field.json.length === 0 && embeds.has(node.field.name))
+        return exists(node.field.name, node.negate === true);
+      return nodeSql(node, alias, rel, ctx.values);
+    }
+    const inner = `(${node.children.map(render).join(node.op === "and" ? " AND " : " OR ")})`;
+    return node.negate ? `NOT ${inner}` : inner;
+  };
+  const conds = [
+    ...(params?.filters ?? []).map(render),
+    ...(params?.presence ?? []).map((p) => exists(p.embed, p.present)),
+    ...[...embeds].filter(([, e]) => e.inner).map(([name]) => exists(name, true)),
+    ...joinConds,
+  ];
+  if (failed) return undefined;
+  return `SELECT 1 FROM ${from}${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""}`;
+};
+
 /** Build the SELECT (and matching COUNT) for a read. */
 export const buildRead = (opts: ReadOptions): ReadSql => {
   const ctx: Ctx = { cache: opts.cache, query: opts.query, aliases: new Aliases(), values: opts.values ?? inlined };
@@ -451,5 +536,20 @@ export const buildRead = (opts: ReadOptions): ReadSql => {
   } else {
     count = `SELECT count(*) FROM ${fromClause}${whereClause}`;
   }
-  return { rows, count, unpaged };
+  // the count query is PostgREST's only where its values are literals, as in its own logs: bound ones
+  // would be numbered twice
+  const planned =
+    ctx.values === inlined && !built.aggregated
+      ? (countQuery(
+          { ...ctx, aliases: new Aliases() },
+          opts.query.select,
+          opts.rel,
+          ROOT_ALIAS,
+          fromClause,
+          opts.query.root,
+          [],
+          [],
+        ) ?? unpaged)
+      : unpaged;
+  return { rows, count, unpaged, planned };
 };
