@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 202 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 176 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -191,24 +191,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /videogames?select=*,designers!inner(*)": "an ambiguous embed",
   "GET /whatev_sites?select=*,whatev_projects(*)": "an ambiguous embed",
 
-  // ── a cast after a json arrow (16) ──
-  "GET /complex_items?id=eq.1&select=myFoo:settings->>foo::json": "a cast after a json arrow",
-  "GET /complex_items?id=eq.1&select=myInt:settings->foo->>int::integer": "a cast after a json arrow",
-  "GET /complex_items?id=eq.1&select=settings->>foo::json": "a cast after a json arrow",
-  "GET /complex_items?id=eq.1&select=settings->foo->>int::integer": "a cast after a json arrow",
-  "GET /complex_items?select=settings->foo->>bar::integer": "a cast after a json arrow",
-  "GET /json_arr?select=data->0->0->>1::int&id=in.(3,4)": "a cast after a json arrow",
-  "GET /json_arr?select=data->0->0xy1->1->23-xy-45->1->xy-6->>0::int&id=eq.9": "a cast after a json arrow",
-  "GET /json_arr?select=data->0->>-2::int&id=in.(3,4)": "a cast after a json arrow",
-  "GET /json_arr?select=data->0->>1::int&id=in.(3,4)": "a cast after a json arrow",
-  "GET /json_arr?select=data->>-1::int&id=in.(1,2)": "a cast after a json arrow",
-  "GET /json_arr?select=data->>0::int&id=in.(1,2)": "a cast after a json arrow",
-  "GET /json_arr?select=data->c->0->d->>4::int&id=in.(7,8)": "a cast after a json arrow",
-  "GET /json_arr?select=data->c->>0::json&id=in.(7,8)": "a cast after a json arrow",
-  "GET /json_arr?select=idx0:data->>0::int,idx1:data->>1::int&id=in.(1,2)": "a cast after a json arrow",
-  "GET /trash_details?select=jsonb_col->>key::integer.sum()": "a cast after a json arrow",
-  "GET /trash_details?select=s:jsonb_col->>key::integer.sum()::text": "a cast after a json arrow",
-
   // ── an aggregate in a spread embed (13) ──
   "GET /budget_expenses?select=...budget_categories(total_budget:budget_amount.sum())": "an aggregate in a spread embed",
   "GET /budget_expenses?select=total_expenses:expense_amount.sum(),...budget_categories(budget_owner,total_budget:budget_amount.sum())&order=budget_categories(budget_owner)": "an aggregate in a spread embed",
@@ -268,15 +250,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /process_supervisor?select=...supervisors(supervisor:id,supervisor_count:count())&order=supervisors(supervisor)": "a filter or an order on a spread embed",
   "GET /supervisors?select=supervisor:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
 
-  // ── a repeated query parameter (7) ──
-  "GET /rpc/get_projects_below?id=5&id=gt.2&select=id": "a repeated query parameter",
-  "GET /rpc/get_projects_below?id=5&id=not.gt.2&select=id": "a repeated query parameter",
-  "GET /rpc/get_projects_below?id=5&id=not.in.(1,3)&select=id": "a repeated query parameter",
-  "GET /rpc/sayhello?name=ignored&name=world": "a repeated query parameter",
-  "GET /rpc/sayhello_variadic?name=ignored&name=world&v=unused": "a repeated query parameter",
-  "POST /rpc/variadic_param +{\"Content-Type\":\"application/x-www-form-urlencoded\",\"Prefer\":\"tx=rollback\"} <v=hi&v=there>": "a repeated query parameter",
-  "POST /rpc/variadic_param +{\"Content-Type\":\"application/x-www-form-urlencoded\",\"Prefer\":\"tx=rollback\"} <v=hi>": "a repeated query parameter",
-
   // ── OPTIONS (4) ──
   "OPTIONS / +{\"Accept\":\"*/*\",\"Origin\":\"http://example.com\",\"Access-Control-Request-Method\":\"POST\",\"Access-Control-Request-Headers\":\"Foo,Bar\"}": "OPTIONS",
   "OPTIONS /projects_auto_updatable_view_without_pk": "OPTIONS",
@@ -309,11 +282,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /rpc/raise_sqlstate_invalid_json_details": "the RAISE conventions",
   "GET /rpc/raise_sqlstate_invalid_json_message": "the RAISE conventions",
   "GET /rpc/raise_sqlstate_missing_details": "the RAISE conventions",
-
-  // ── the query string of an RPC (3) ──
-  "GET /rpc/getproject_domain?id=1&select=id,name,client:clients(id),tasks(id)": "the query string of an RPC",
-  "POST /rpc/getproject_domain?select=id,name,client:clients(id),tasks(id) +{\"Prefer\":\"tx=rollback\"} <{ \"id\": 1}>": "the query string of an RPC",
-  "POST /rpc/sayhello?name=John +{\"Prefer\":\"tx=rollback\"} <{name: \"John\"}>": "the query string of an RPC",
 
   // ── privileges through a view (2) ──
   "DELETE /app_users?id=eq.1&select=id,email +{\"Prefer\":\"return=representation, tx=rollback\"} <{ \"password\": \"passxyz\" }>": "privileges through a view",

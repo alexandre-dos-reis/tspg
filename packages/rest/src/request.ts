@@ -303,8 +303,12 @@ export const parseBody = async (
     }
   }
   if (ct === "application/x-www-form-urlencoded") {
-    const obj: Record<string, string> = {};
-    for (const [k, v] of new URLSearchParams(text)) obj[k] = v;
+    // a key given twice is a list for a function (a variadic parameter takes it whole), the last value for a table
+    const obj: Record<string, string | string[]> = {};
+    for (const [k, v] of new URLSearchParams(text)) {
+      const prev = obj[k];
+      obj[k] = rpc && prev !== undefined ? [...(Array.isArray(prev) ? prev : [prev]), v] : v;
+    }
     return { kind: "urlencoded", value: obj };
   }
   if (ct === "text/csv") {

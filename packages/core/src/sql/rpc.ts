@@ -162,6 +162,10 @@ const stripQuotes = (s: string) => s.replace(/^"|"$/g, "");
 /** Find the table a composite return type refers to, if it is an exposed relation. */
 const relationOfReturnType = (cache: SchemaCache, fn: FunctionDef): Relation | undefined => {
   if (!fn.returnsComposite) return undefined;
+  if (fn.returnRelation) {
+    const r = cache.relations.get(relKey(fn.returnRelation.schema, fn.returnRelation.name));
+    if (r) return r;
+  }
   const t = fn.returnType.replace(/\[\]$/, "");
   const dot = t.indexOf(".");
   if (dot > 0) return cache.relations.get(relKey(stripQuotes(t.slice(0, dot)), stripQuotes(t.slice(dot + 1))));

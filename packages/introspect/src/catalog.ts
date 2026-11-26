@@ -364,7 +364,9 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
               WHERE p.pronargs = 1 AND t2.oid = p.proargtypes[0] AND c2.relkind IN ('r','v','m','f','p')) AS arg_rel,
             (SELECT json_build_object('schema', n2.nspname, 'name', c2.relname)
                FROM pg_type t2 JOIN pg_class c2 ON c2.oid = t2.typrelid JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
-              WHERE t2.oid = p.prorettype AND c2.relkind IN ('r','v','m','f','p')) AS ret_rel,
+              -- a domain over a table's row type returns that table's rows
+              WHERE t2.oid = CASE WHEN rt.typtype = 'd' THEN rt.typbasetype ELSE p.prorettype END
+                AND c2.relkind IN ('r','v','m','f','p')) AS ret_rel,
             (SELECT coalesce(json_agg(json_build_object(
                        'name', coalesce(p.proargnames[t.i], ''),
                        'type', format_type(t.typ, NULL),
@@ -618,7 +620,8 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       ...(f.return_enum ? { returnEnumLabels: f.return_enum } : {}),
       ...(f.return_composite ? { returnComposite: f.return_composite } : {}),
       returnsSet: f.returns_set,
-      returnsComposite: f.has_out || f.return_typtype === "c" || f.return_type === "record",
+      returnsComposite:
+        f.has_out || f.return_typtype === "c" || f.return_type === "record" || (f.return_typtype === "d" && f.ret_rel !== null),
       returnsVoid: f.return_type === "void",
       volatility: f.volatility === "i" ? "immutable" : f.volatility === "s" ? "stable" : "volatile",
       comment: f.comment,

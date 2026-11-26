@@ -60,13 +60,15 @@ interface Ctx {
 
 const fieldExpr = (item: FieldItem, alias: string, rel: Relation): string => {
   const base = fieldSql(alias, item.field, rel);
-  const expr = item.cast ? `${base}::${item.cast}` : base;
+  // `::` binds tighter than `->>`: a path is cast as a whole, not its last key
+  const expr = item.cast ? (item.field.json.length ? `(${base})::${item.cast}` : `${base}::${item.cast}`) : base;
   const plain = !item.cast && item.field.json.length === 0 && !item.alias;
   return plain ? expr : `${expr} AS ${quoteIdent(outputName(item))}`;
 };
 
 const aggregateExpr = (item: AggregateItem, alias: string, rel: Relation): string => {
-  const arg = item.field ? fieldSql(alias, item.field, rel) : "*";
+  const column = item.field ? fieldSql(alias, item.field, rel) : "*";
+  const arg = item.fieldCast ? `(${column})::${item.fieldCast}` : column;
   let expr = `${item.fn}(${arg})`;
   if (item.cast) expr = `(${expr})::${item.cast}`;
   return `${expr} AS ${quoteIdent(outputName(item))}`;

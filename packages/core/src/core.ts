@@ -618,19 +618,25 @@ export const planRpc = (
   }
   const provided = Object.keys(argValues);
   const fn = resolveFunction(env.cache, schema, name, new Set(provided), body !== undefined && write, write, bodyType);
-  // GET: repeated parameters make a list, and a variadic parameter always takes one
-  for (const a of fn.args) {
-    if (a.variadic && getArgKeys.has(a.name) && !Array.isArray(argValues[a.name]))
-      argValues[a.name] = [argValues[a.name]];
+  // A parameter given twice in a query string or a form is a list for a variadic parameter, which
+  // always takes one, and the last value for any other (PostgREST).
+  const listed = !write || body?.kind === "urlencoded";
+  if (listed) {
+    for (const a of fn.args) {
+      const v = argValues[a.name];
+      if (a.variadic && (getArgKeys.has(a.name) || body?.kind === "urlencoded") && v !== undefined && !Array.isArray(v))
+        argValues[a.name] = [v];
+      else if (!a.variadic && Array.isArray(v)) argValues[a.name] = v[v.length - 1];
+    }
   }
   const rawBody = write && body !== undefined && isSingleUnnamedParam(fn, bodyType);
   const call = buildRpc(env.cache, fn, provided, rawBody, bodyType);
 
   const fnArgNames = new Set(fn.args.map((a) => a.name));
   const query = qp.parse({
-    skip: (k, v) => v === "" && bare.has(k),
-    // On GET, parameters that name function arguments are not filters.
-    allowFilterKey: (k) => write || !fnArgNames.has(k),
+    // On GET, a parameter that names an argument is that argument, unless its value is a filter's:
+    // `?id=5&id=gt.2` passes 5 and filters the result on `id > 2`.
+    skip: (k, v) => (v === "" && bare.has(k)) || (!write && fnArgNames.has(k) && !looksLikeFilter(v)),
   });
   // a single unnamed parameter gets the body as it came, not as it parses
   const argsJson = rawBody ? (body!.raw ?? JSON.stringify(body!.value)) : JSON.stringify(argValues);

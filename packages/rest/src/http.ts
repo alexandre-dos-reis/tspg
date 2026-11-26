@@ -321,8 +321,6 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
   if (target.type === "rpc" && method !== "GET" && method !== "HEAD" && method !== "POST") {
     throw new PgRestError(405, "PGRST101", `Cannot use the ${method} method on RPC`);
   }
-  const body = await parseBody(request, method, target.type === "rpc");
-
   const pairs = queryPairs(url.search);
   const bare = bareKeys(url.search);
   // a key without `=` is no filter on a table; it is an argument of a function
@@ -336,14 +334,19 @@ export const handleRequest = async (env: HttpEnv, request: Request, ctx: Request
         allowFilterKey: options?.allowFilterKey,
       }),
   };
-  let plan: SqlPlan;
-  if (target.type === "table") {
-    // PostgREST reads the query string before it looks for the table: a syntax error is answered first
+  // PostgREST reads the query string before the payload and before it looks for the table: a syntax
+  // error is answered first. A GET on a function cannot be read yet -- which of its parameters are
+  // arguments depends on the function.
+  if (target.type === "table" || method === "POST") {
     try {
       qp.parse();
     } catch (e) {
       if (e instanceof EngineError && e.reason === "invalid_input") throw e;
     }
+  }
+  const body = await parseBody(request, method, target.type === "rpc");
+  let plan: SqlPlan;
+  if (target.type === "table") {
     // PostgREST ignores a resolution it has nothing to resolve on -- no `on_conflict=`, no primary key --
     // inserts, and does not report it as applied
     if (method === "POST" && prefer.resolution && !hasConflictTarget(env, schema, target.name, qp)) {
