@@ -1,7 +1,8 @@
 import { ALIAS } from "../constants";
 import { EngineError } from "../errors";
 import { quoteIdent, quoteQualified } from "../quote";
-import { type FunctionDef, type Relation, type SchemaCache, levenshtein, relKey } from "../schema";
+import { fuzzyGetOne } from "../fuzzy";
+import { type FunctionDef, type Relation, type SchemaCache, relKey } from "../schema";
 
 export type RpcShape =
   /** Rows of a table-like result: SETOF composite / TABLE(...). */
@@ -19,6 +20,12 @@ export interface RpcCall {
   readonly shape: RpcShape;
   /** A SELECT that yields the function result as a relation. Uses `$1` for arguments when `hasBody`. */
   readonly source: string;
+  /**
+   * The function call as a `FROM` item, to be aliased by the reader, for a function returning rows:
+   * aliasing the call itself (rather than a subquery over it) keeps the row typed, so a computed field
+   * or a computed relationship of the table it returns can be resolved on it.
+   */
+  readonly fromItem?: string | undefined;
   /** True when the SQL references `$1` (a JSON text with the arguments). */
   readonly usesBody: boolean;
   /** Table the result rows belong to, when known (enables embedding) — or a synthetic one. */
@@ -43,12 +50,21 @@ export const isSingleUnnamedParam = (fn: FunctionDef, as: BodyType = "json"): bo
 const arrowSignature = (fn: FunctionDef): string =>
   `${fn.schema}.${fn.name}(${fn.args.map((a) => `${a.name} => ${a.type}`).join(", ")})`;
 
-/** Similarity of two names, 1 for equal; PostgREST suggests the closest name above ~0.75. */
-const similarity = (a: string, b: string): number =>
-  1 - levenshtein(a.toLowerCase(), b.toLowerCase()) / Math.max(a.length, b.length, 1);
-const SUGGEST_AT = 0.75;
+/**
+ * Whether a function can be called over HTTP at all (PostgREST's `callable`): every parameter has a
+ * name, or the one that has none takes a body (`bytea`, `json`, `jsonb`, `text`, `xml`). A function of
+ * a table row, say, is a computed field or relationship and nothing else.
+ */
+const callable = (fn: FunctionDef): boolean => {
+  const unnamed = fn.args.filter((a) => a.name === "");
+  return unnamed.length === 0 || (unnamed.length === 1 && ["bytea", "json", "jsonb", "text", "xml"].includes(unnamed[0]!.type));
+};
 
-/** The "Perhaps you meant ..." hint of `function_not_found`. */
+/**
+ * The "Perhaps you meant ..." hint of `function_not_found`, as PostgREST's `noRpcHint` makes it: with
+ * no function of that name, the closest name in the schema; otherwise the closest parameter list
+ * among its overloads, compared as text, `(a, b)`.
+ */
 const functionHint = (
   cache: SchemaCache,
   schema: string,
@@ -56,102 +72,81 @@ const functionHint = (
   candidates: ReadonlyArray<FunctionDef>,
   provided: ReadonlySet<string>,
 ): string | null => {
+  const list = (names: ReadonlyArray<string>) => `(${names.join(", ")})`;
   if (candidates.length > 0) {
-    // nothing was given and a function takes one unnamed parameter: PostgREST suggests its (empty) list of names
-    if (
-      provided.size === 0 &&
-      candidates.some((fn) => (Object.keys(BODY_TYPES) as BodyType[]).some((t) => isSingleUnnamedParam(fn, t)))
-    ) {
-      return `Perhaps you meant to call the function ${schema}.${name}()`;
-    }
-    // same name, different parameters: suggest the signature sharing the most parameter names
-    let best: { fn: FunctionDef; score: number } | undefined;
-    for (const fn of candidates) {
-      let score = 0;
-      for (const p of provided) {
-        if (fn.args.some((a) => a.name === p)) score += 2;
-        else if (fn.args.some((a) => similarity(a.name, p) >= SUGGEST_AT)) score += 1;
-      }
-      if (score > 0 && (!best || score > best.score)) best = { fn, score };
-    }
-    return best
-      ? `Perhaps you meant to call the function ${schema}.${name}(${best.fn.args
-          .map((a) => a.name)
-          .sort()
-          .join(", ")})`
-      : null;
+    const lists = candidates.map((fn) => list(fn.args.map((a) => a.name).sort()));
+    const best = fuzzyGetOne(lists, list([...provided].sort()), 0.33);
+    return best === undefined ? null : `Perhaps you meant to call the function ${schema}.${name}${best}`;
   }
-  // no such function: suggest a similarly named one
-  let best: { name: string; score: number } | undefined;
-  for (const fns of cache.functions.values()) {
-    const fn = fns[0];
-    if (!fn || fn.schema !== schema) continue;
-    const score = similarity(name, fn.name);
-    if (score >= SUGGEST_AT && (!best || score > best.score)) best = { name: fn.name, score };
-  }
-  return best ? `Perhaps you meant to call the function ${schema}.${best.name}` : null;
+  const names: string[] = [];
+  for (const fns of cache.functions.values())
+    for (const fn of fns) if (fn.schema === schema && callable(fn)) names.push(fn.name);
+  // a function's name is only suggested when it is close (PostgREST's `getFuzzyHint`, 0.75)
+  const best = fuzzyGetOne(names, name, 0.75);
+  return best === undefined ? null : `Perhaps you meant to call the function ${schema}.${best}`;
 };
 
 /**
- * Pick the function to call from the argument names the client supplied.
- * `rawBody` is true when a body that is not a JSON object was given;
- * `post` tells whether the function was invoked with POST (which also allows a single unnamed parameter).
+ * Pick the function to call from the argument names the client supplied, as PostgREST's `findProc`
+ * does: the overloads whose parameters the names match, and failing those, the ones that take the
+ * body whole through a single unnamed parameter of the body's type.
+ *
+ * `jsonBody` is true when a POST carries JSON (the only body a `json`/`jsonb` parameter takes whole);
+ * `post` tells whether the function was invoked with POST; `bodyType` is the type of a raw body.
  */
 export const resolveFunction = (
   cache: SchemaCache,
   schema: string,
   name: string,
   provided: ReadonlySet<string>,
-  hasBody: boolean,
+  jsonBody: boolean,
   post = true,
   bodyType: BodyType = "json",
 ): FunctionDef => {
-  const candidates = cache.functions.get(relKey(schema, name)) ?? [];
+  const candidates = (cache.functions.get(relKey(schema, name)) ?? []).filter(callable);
   const names = [...provided].sort();
+  const raw = post && bodyType !== "json";
   const params =
     names.length === 0 ? "without parameters" : `with parameter${names.length === 1 ? "" : "s"} ${names.join(", ")}`;
   const notFound = () =>
     new EngineError(
       "function_not_found",
-      names.length === 0
-        ? `Could not find the function ${schema}.${name} without parameters in the schema cache`
-        : `Could not find the function ${schema}.${name}(${names.join(", ")}) in the schema cache`,
-      `Searched for the function ${schema}.${name} ${params}${post ? " or with a single unnamed json/jsonb parameter" : ""}, but no matches were found in the schema cache.`,
-      functionHint(cache, schema, name, candidates, provided),
+      raw
+        ? `Could not find the function ${schema}.${name} in the schema cache`
+        : names.length === 0
+          ? `Could not find the function ${schema}.${name} without parameters in the schema cache`
+          : `Could not find the function ${schema}.${name}(${names.join(", ")}) in the schema cache`,
+      `Searched for the function ${schema}.${name} ${
+        raw
+          ? `with a single unnamed ${bodyType} parameter`
+          : `${params}${post && jsonBody ? " or with a single unnamed json/jsonb parameter" : ""}`
+      }, but no matches were found in the schema cache.`,
+      // a raw body names no parameter to suggest
+      raw ? null : functionHint(cache, schema, name, candidates, provided),
     );
 
-  if (bodyType !== "json") {
-    // a raw body goes to a function that takes nothing else
-    const raw = candidates.filter((fn) => isSingleUnnamedParam(fn, bodyType));
-    if (raw.length === 1) return raw[0]!;
-    throw new EngineError(
-      "function_not_found",
-      `Could not find the function ${schema}.${name} in the schema cache`,
-      `Searched for the function ${schema}.${name} with a single unnamed ${bodyType} parameter, but no matches were found in the schema cache.`,
-      null,
-    );
-  }
-  if (candidates.length === 0) throw notFound();
+  const matchesParams = (fn: FunctionDef): boolean => {
+    if (fn.args.length === 0) return provided.size === 0 && !raw;
+    const required = fn.args.filter((a) => !a.hasDefault).map((a) => a.name);
+    const optional = new Set(fn.args.filter((a) => a.hasDefault).map((a) => a.name));
+    const rest = [...provided].filter((p) => !optional.has(p));
+    return rest.length === required.length && required.every((r) => provided.has(r));
+  };
+  const takesBody = (fn: FunctionDef): boolean =>
+    post && (raw ? isSingleUnnamedParam(fn, bodyType) : jsonBody && isSingleUnnamedParam(fn, "json"));
 
-  const named = candidates.filter((fn) => {
-    const argNames = new Set(fn.args.map((a) => a.name));
-    for (const p of provided) if (!argNames.has(p)) return false;
-    return fn.args.every((a) => a.hasDefault || provided.has(a.name));
-  });
-  const single = hasBody ? candidates.filter((fn) => isSingleUnnamedParam(fn)) : [];
-
-  const matches =
-    provided.size === 0 && hasBody && single.length > 0
-      ? single
-      : [...named, ...single.filter((s) => !named.includes(s))];
-  if (matches.length === 0) throw notFound();
+  const named = candidates.filter(matchesParams);
+  const single = candidates.filter((fn) => !named.includes(fn) && takesBody(fn));
+  const matches = named.length > 0 ? named : single;
   if (matches.length === 1) return matches[0]!;
-
-  const exact = matches.filter((fn) => fn.args.length === provided.size);
-  if (exact.length === 1) return exact[0]!;
+  if (matches.length === 0) throw notFound();
   throw new EngineError(
     "ambiguous_function",
-    `Could not choose the best candidate function between: ${matches.map(arrowSignature).sort().join(", ")}`,
+    // PostgREST lists the candidates in the order it read them; the fewest parameters first is that order here
+    `Could not choose the best candidate function between: ${[...matches]
+      .sort((a, b) => a.args.length - b.args.length || (arrowSignature(a) < arrowSignature(b) ? -1 : 1))
+      .map(arrowSignature)
+      .join(", ")}`,
     null,
     "Try renaming the parameters or the function itself in the database so function overloading can be resolved",
   );
@@ -190,6 +185,14 @@ const syntheticRelation = (fn: FunctionDef): Relation => ({
 });
 
 /**
+ * The type an argument is read as. A function's signature carries no length, and `character` or `bit`
+ * spelled without one is a length of 1: PostgREST reads them as `character varying` and `bit varying`,
+ * and the function's own parameter (or the column it is written to) decides.
+ */
+const unbounded = (type: string): string =>
+  type.replace(/^character(?=\[|$)/, "character varying").replace(/^bit(?=\[|$)/, "bit varying");
+
+/**
  * Build the SQL that calls `fn`. Arguments travel as one JSON text (`$1`) and
  * are converted by `json_to_record` using the declared types, so values are
  * never interpolated into SQL.
@@ -218,11 +221,24 @@ export const buildRpc = (
       .join(", ");
     if (used.length > 0) {
       usesBody = true;
-      from = `json_to_record(($1::text)::json) AS _args(${used.map((a) => `${quoteIdent(a.name)} ${a.type}`).join(", ")}) CROSS JOIN LATERAL `;
+      from = `json_to_record(($1::text)::json) AS _args(${used.map((a) => `${quoteIdent(a.name)} ${unbounded(a.type)}`).join(", ")}) CROSS JOIN LATERAL `;
     }
   }
 
   const call = `${from}${fnRef}(${args}) AS _f`;
+  // A bare `record` is called in the select list, as PostgREST does: there its columns are the ones
+  // the call returns, where a `FROM` would need them spelled out. Its value is the body, an object
+  // (or a list of them).
+  if (fn.returnsAnonymousRecord) {
+    const fromArgs = from ? ` FROM ${from.replace(/ CROSS JOIN LATERAL $/, "")}` : "";
+    return {
+      fn,
+      shape: fn.returnsSet ? "scalar-set" : "scalar",
+      source: `SELECT ${fnRef}(${args}) AS ${ALIAS}_scalar${fromArgs}`,
+      usesBody,
+      relation: syntheticRelation(fn),
+    };
+  }
   const base = fn.returnsVoid
     ? `SELECT 1 AS ${ALIAS}_scalar FROM ${call}`
     : fn.returnsComposite
@@ -240,5 +256,6 @@ export const buildRpc = (
         : "scalar";
 
   const relation = relationOfReturnType(cache, fn) ?? syntheticRelation(fn);
-  return { fn, shape, source: base, usesBody, relation };
+  const fromItem = fn.returnsComposite ? `${from}${fnRef}(${args})` : undefined;
+  return { fn, shape, source: base, fromItem, usesBody, relation };
 };

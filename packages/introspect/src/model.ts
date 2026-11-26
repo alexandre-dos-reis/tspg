@@ -110,6 +110,11 @@ export interface FunctionDef {
   readonly returnsSet: boolean;
   /** True if the function returns a composite / record / TABLE(...) row type. */
   readonly returnsComposite: boolean;
+  /**
+   * True if it returns a bare `record` -- no OUT parameter, no `TABLE(...)` -- whose columns only
+   * the call itself knows: it cannot be read in a `FROM` without a column definition list.
+   */
+  readonly returnsAnonymousRecord?: boolean | undefined;
   readonly returnsVoid: boolean;
   readonly volatility: "immutable" | "stable" | "volatile";
   readonly comment: string | null;

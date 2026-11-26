@@ -622,6 +622,7 @@ export const readCatalog = async (db: DbSession, schemas: ReadonlyArray<string>)
       returnsSet: f.returns_set,
       returnsComposite:
         f.has_out || f.return_typtype === "c" || f.return_type === "record" || (f.return_typtype === "d" && f.ret_rel !== null),
+      ...(f.return_type === "record" && !f.has_out ? { returnsAnonymousRecord: true } : {}),
       returnsVoid: f.return_type === "void",
       volatility: f.volatility === "i" ? "immutable" : f.volatility === "s" ? "stable" : "volatile",
       comment: f.comment,

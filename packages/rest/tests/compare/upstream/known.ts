@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 176 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 159 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -221,17 +221,7 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",
   "GET /projects?select=name,clients()&clients=is.null +{\"Prefer\":\"count=planned\"}": "a filter on an embed selected with no columns",
 
-  // ── an overloaded function (8) ──
-  "GET /rpc/overloaded?a=1&b=2&wrong_arg=value": "an overloaded function",
-  "GET /rpc/overloaded_same_args?arg=value": "an overloaded function",
-  "GET /rpc/search2?id=1&select=*,computed_rel_overload(*)": "an overloaded function",
-  "GET /rpc/search?id=1&select=*,computed_rel_overload(*)": "an overloaded function",
-  "GET /rpc/search?id=1&select=id,computed_overload": "an overloaded function",
-  "POST /rpc/overloaded_unnamed_param +{\"Content-Type\":\"application/json\",\"Prefer\":\"handling=lenient, anything, tx=rollback\"} <{}>": "an overloaded function",
-  "POST /rpc/overloaded_unnamed_param +{\"Content-Type\":\"application/json\",\"Prefer\":\"tx=rollback\"} <{}>": "an overloaded function",
-  "POST /rpc/overloaded_unnamed_param +{\"Content-Type\":\"text/csv\",\"Prefer\":\"tx=rollback\"} <a,b 1,2 4,6 100,200>": "an overloaded function",
-
-  // ── the wording of an error (8) ──
+  // ── the wording of an error (7) ──
   "GET /car_model_sales?id=in.(1,3,4)&select=id,name,car_models_default(id,name)&order=id.asc": "the wording of an error",
   "GET /car_models?id=in.(1,2,4)&select=id,name,car_model_sales_202101(id)&order=id.asc": "the wording of an error",
   "GET /clients?select=*,pros:projects(*)&order=pros(id)": "the wording of an error",
@@ -239,7 +229,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /rpc/single_article?id=1&select=*,article_stars(*)": "the wording of an error",
   "POST /rpc/delete_items_returns_void +{\"Prefer\":\"handling=strict, max-affected=20, tx=rollback\"} <>": "the wording of an error",
   "POST /rpc/single_article?select=*,article_stars(*) +{\"Prefer\":\"tx=rollback\"} <{ \"id\": 1}>": "the wording of an error",
-  "POST /rpc/unnamed_int_param +{\"Content-Type\":\"application/json\",\"Prefer\":\"tx=rollback\"} <{\"x\": 1, \"y\": 2}>": "the wording of an error",
 
   // ── a filter or an order on a spread embed (7) ──
   "GET /factories?select=factory:name,...processes(name)&processes=not.is.null&order=name&processes.order=name": "a filter or an order on a spread embed",
@@ -255,18 +244,6 @@ export const KNOWN: Record<string, Cluster> = {
   "OPTIONS /projects_auto_updatable_view_without_pk": "OPTIONS",
   "OPTIONS /projects_view_with_all_triggers_without_pk": "OPTIONS",
   "OPTIONS /rpc/reset_table": "OPTIONS",
-
-  // ── a function returning record (4) ──
-  "POST /rpc/returns_record +{\"Prefer\":\"tx=rollback\"} <>": "a function returning record",
-  "POST /rpc/returns_record_params +{\"Prefer\":\"tx=rollback\"} <{\"id\":1, \"name\": \"Windows%\"}>": "a function returning record",
-  "POST /rpc/returns_setof_record +{\"Prefer\":\"tx=rollback\"} <>": "a function returning record",
-  "POST /rpc/returns_setof_record_params +{\"Prefer\":\"tx=rollback\"} <{\"id\":1,\"name\":\"Windows%\"}>": "a function returning record",
-
-  // ── an argument of a character type (4) ──
-  "GET /rpc/bit_param_select?bit_=101010&bit_arr={101,101010}": "an argument of a character type",
-  "GET /rpc/char_param_select?char_=abcdefg&char_arr={abc,abcdefg}": "an argument of a character type",
-  "POST /rpc/bit_param_insert +{\"Prefer\":\"tx=rollback\"} <{ \"bit_\": \"101010\", \"bit_arr\": \"{101,101010}\" }>": "an argument of a character type",
-  "POST /rpc/char_param_insert +{\"Prefer\":\"tx=rollback\"} <{ \"char_\": \"abcdefg\", \"char_arr\": \"{abc,abcdefg}\" }>": "an argument of a character type",
 
   // ── a filter whose target is an embedded resource (3) ──
   "GET /projects?select=name,client_id,client:client_id(name)&client_id=eq.2": "a filter whose target is an embedded resource",

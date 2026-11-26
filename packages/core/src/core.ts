@@ -617,7 +617,8 @@ export const planRpc = (
     }
   }
   const provided = Object.keys(argValues);
-  const fn = resolveFunction(env.cache, schema, name, new Set(provided), body !== undefined && write, write, bodyType);
+  // only a JSON body can be taken whole by a function's single unnamed json parameter
+  const fn = resolveFunction(env.cache, schema, name, new Set(provided), write && body?.kind === "json", write, bodyType);
   // A parameter given twice in a query string or a form is a list for a variadic parameter, which
   // always takes one, and the last value for any other (PostgREST).
   const listed = !write || body?.kind === "urlencoded";
@@ -662,7 +663,7 @@ export const planRpc = (
     const read = buildRead({
       cache: env.cache,
       rel: call.relation,
-      from: `(${call.source})`,
+      from: call.fromItem ?? `(${call.source})`,
       query,
       limit,
       offset,
