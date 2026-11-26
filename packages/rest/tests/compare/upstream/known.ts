@@ -1,5 +1,5 @@
 // Where this engine and PostgREST 16.5 answer differently on PostgREST's own requests (`upstream/cases.ts`,
-// replayed on its own fixtures by `../upstream.test.ts`): 41 of the 1295 that run,
+// replayed on its own fixtures by `../upstream.test.ts`): 36 of the 1295 that run,
 // each named by the cluster it belongs to.
 //
 // The test asserts that a case listed here still differs, so one that starts answering identically fails until it
@@ -113,15 +113,6 @@ export const KNOWN: Record<string, Cluster> = {
   "GET /some_numbers?val=eq.3 +{\"Accept\":\"crazy/bingo\"}": "a media type handled in the database",
   "GET /some_numbers?val=eq.4 +{\"Accept\":\"unknown/unknown\"}": "a media type handled in the database",
   "GET /xmltest +{\"Accept\":\"text/xml\"}": "a media type handled in the database",
-
-  // ── an embed by a name that is not a table (4) ──
-  "GET /i2459_self_v1?select=*,parent(*),grandparent(*)": "an embed by a name that is not a table",
-  "GET /i2459_self_v2?select=*,parent(*),grandparent(*)": "an embed by a name that is not a table",
-  "GET /i2459_simple_v1?select=*,i2459_simple_v2!t1_id2(*)": "an embed by a name that is not a table",
-  "GET /i2459_simple_v2?select=*,i2459_simple_v1!t1_id2(*)": "an embed by a name that is not a table",
-
-  // ── an ambiguous embed (1) ──
-  "GET /i2459_composite_v2?select=*,i2459_composite_v1(*)": "an ambiguous embed",
 
   // ── a filter on an embed selected with no columns (4) ──
   "GET /client?select=*,clientinfo(),contact()&clientinfo.other=ilike.*main*&contact.name=ilike.*tabby*&or=(clientinfo.not.is.null,contact.not.is.null) +{\"Prefer\":\"count=estimated\"}": "a filter on an embed selected with no columns",

@@ -114,27 +114,29 @@ const viewForeignKeys = (fks: ReadonlyArray<ForeignKey>, rows: ReadonlyArray<Vie
     const next = viewCols.get(key)?.get(col);
     return next && depth < 16 ? base(next.key, next.col, depth + 1) : { key, col };
   };
-  /** Every view that exposes all of `cols` of table `tableKey`, with the view-side column names. */
+  /**
+   * Every view that exposes all of `cols` of table `tableKey`, with the view-side column names: one
+   * entry per way of choosing them, when a view exposes one table column under several names
+   * (PostgREST's `expandKeyDepCols`).
+   */
   const exposing = (tableKey: string, cols: ReadonlyArray<string>) => {
     const out: Array<{ schema: string; name: string; cols: string[] }> = [];
     for (const [vkey, m] of viewCols) {
-      const names: string[] = [];
+      const choices: string[][] = [];
       for (const c of cols) {
-        let found: string | undefined;
+        const found: string[] = [];
         for (const [vcol] of m) {
           const b = base(vkey, vcol);
-          if (b.key === tableKey && b.col === c) {
-            found = vcol;
-            break;
-          }
+          if (b.key === tableKey && b.col === c) found.push(vcol);
         }
-        if (found === undefined) break;
-        names.push(found);
+        if (found.length === 0) break;
+        choices.push(found);
       }
-      if (names.length === cols.length) {
-        const [schema, ...rest] = vkey.split(".");
-        out.push({ schema: schema!, name: rest.join("."), cols: names });
-      }
+      if (choices.length !== cols.length) continue;
+      const [schema, ...rest] = vkey.split(".");
+      let combos: string[][] = [[]];
+      for (const options of choices) combos = combos.flatMap((prefix) => options.map((o) => [...prefix, o]));
+      for (const names of combos) out.push({ schema: schema!, name: rest.join("."), cols: names });
     }
     return out;
   };
